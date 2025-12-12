@@ -7,7 +7,7 @@ import { format, startOfWeek, isBefore, isAfter, addDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
 export const TimeTable: React.FC = () => {
-  const { user, timeTables, addTimeTable, deleteTimeTable, courses, addCourse, updateCourse, deleteCourse, exams, meets, reminderSettings, updateReminderSettings, addNotification } = useApp();
+  const { user, timeTables, addTimeTable, deleteTimeTable, courses, addCourse, updateCourse, deleteCourse, exams, meets, reminderSettings, updateReminderSettings, addNotification, uploadFile } = useApp();
   
   // --- STATES ---
   const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR'>('LIST');
@@ -177,31 +177,39 @@ export const TimeTable: React.FC = () => {
     setUploadProgress(0);
   };
 
-  const confirmUpload = () => {
+  const confirmUpload = async () => {
     if (!pendingFile) return;
     setIsUploading(true);
-    setUploadProgress(0);
+    setUploadProgress(10); // Start progress
+
+    // Fake progress for UX while uploading
     const interval = setInterval(() => {
         setUploadProgress(prev => {
             if (prev >= 90) { clearInterval(interval); return 90; }
             return prev + 10;
         });
-    }, 100);
+    }, 500);
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      setUploadProgress(100);
-      clearInterval(interval);
-      setTimeout(async () => {
-        const base64 = reader.result as string;
+    const publicUrl = await uploadFile(pendingFile, 'documents'); // Upload to 'documents' bucket
+
+    clearInterval(interval);
+    setUploadProgress(100);
+
+    if (publicUrl) {
         const title = pendingFile.name.replace(/\.[^/.]+$/, "");
-        await addTimeTable({ title: title, fileUrl: base64, fileName: pendingFile.name });
-        setIsUploading(false);
-        setPendingFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }, 500);
-    };
-    reader.readAsDataURL(pendingFile);
+        await addTimeTable({
+            title: title,
+            fileUrl: publicUrl,
+            fileName: pendingFile.name
+        });
+        addNotification("Fichier téléversé avec succès", "SUCCESS");
+    } else {
+        addNotification("Échec du téléversement", "ERROR");
+    }
+
+    setIsUploading(false);
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const confirmDelete = () => { if (deleteId) { deleteTimeTable(deleteId); setDeleteId(null); } };

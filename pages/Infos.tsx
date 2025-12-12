@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useDeferredValue, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, Urgency, Announcement, Attachment } from '../types';
-import { Megaphone, Trash2, Clock, Plus, X, ArrowUpDown, Filter, Send, Mail, User, AlertCircle, Timer, Search, Archive, Eye, Copy, ChevronLeft, ChevronRight, Pencil, School, Calendar, AlertTriangle, FileText, Info, Link as LinkIcon, Image as ImageIcon, ExternalLink, Download, File, Lock } from 'lucide-react';
+import { Megaphone, Trash2, Clock, Plus, X, ArrowUpDown, Filter, Send, Mail, User, AlertCircle, Timer, Search, Archive, Eye, Copy, ChevronLeft, ChevronRight, Pencil, School, Calendar, AlertTriangle, FileText, Info, Link as LinkIcon, Image as ImageIcon, ExternalLink, Download, File, Lock, Paperclip, Upload } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, addHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '../components/UserAvatar';
@@ -47,14 +47,14 @@ export const Infos: React.FC = () => {
     user, 
     announcements, 
     users, 
-    classes,
     addAnnouncement, 
     updateAnnouncement, 
     deleteAnnouncement, 
     shareResource,
     highlightedItemId,
     setHighlightedItemId,
-    addNotification
+    addNotification,
+    uploadFile
   } = useApp();
   const [isModalOpen, setIsModalOpen] = useState(false);
   
@@ -164,7 +164,7 @@ export const Infos: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
@@ -174,8 +174,6 @@ export const Infos: React.FC = () => {
         addNotification('Le fichier dépasse la limite de 3 Mo.', 'ERROR');
         return;
       }
-
-      const reader = new FileReader();
       
       const isImage = file.type.startsWith('image/');
       const isPdf = file.type === 'application/pdf';
@@ -185,16 +183,19 @@ export const Infos: React.FC = () => {
         return;
       }
 
-      reader.onload = () => {
+      addNotification("Téléversement en cours...", "INFO");
+      const url = await uploadFile(file, 'attachments');
+      
+      if (url) {
         const newAttachment: Attachment = {
           id: Math.random().toString(36).substr(2, 9),
           type: isPdf ? 'PDF' : 'IMAGE',
-          url: reader.result as string,
+          url: url,
           name: file.name
         };
         setAttachments(prev => [...prev, newAttachment]);
-      };
-      reader.readAsDataURL(file);
+        addNotification("Fichier ajouté", "SUCCESS");
+      }
     }
   };
 
@@ -415,7 +416,35 @@ export const Infos: React.FC = () => {
 
       {showFilters && (
         <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 mb-6 flex flex-col gap-4 animate-in slide-in-from-top-2">
-           {/* Filters UI code (unchanged) */}
+           {/* Filters UI */}
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                 <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block ml-1">Urgence</label>
+                 <select value={filterUrgency} onChange={e => setFilterUrgency(e.target.value as any)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#87CEEB] dark:text-white">
+                    <option value="ALL">Toutes</option>
+                    <option value={Urgency.NORMAL}>Normal</option>
+                    <option value={Urgency.INFO}>Info</option>
+                    <option value={Urgency.URGENT}>Urgent</option>
+                 </select>
+              </div>
+              <div>
+                 <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block ml-1">Auteur</label>
+                 <select value={filterAuthorId} onChange={e => setFilterAuthorId(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#87CEEB] dark:text-white">
+                    <option value="ALL">Tous</option>
+                    {uniqueAuthors.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                 </select>
+              </div>
+              <div className="md:col-span-2 grid grid-cols-2 gap-2">
+                 <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block ml-1">Du</label>
+                    <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#87CEEB] dark:text-white" />
+                 </div>
+                 <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-400 mb-1 block ml-1">Au</label>
+                    <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold outline-none focus:border-[#87CEEB] dark:text-white" />
+                 </div>
+              </div>
+           </div>
            <div className="flex justify-end pt-2 border-t border-slate-50 dark:border-slate-800">
               <button onClick={clearFilters} className="text-xs text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/20 py-2 px-4 rounded-lg transition flex items-center gap-1">
                  <X className="w-3 h-3" /> Réinitialiser les filtres
@@ -667,7 +696,7 @@ export const Infos: React.FC = () => {
       {/* MODALE DE CREATION/EDITION */}
       {isModalOpen && canCreate && (
          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[150] flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[95vh] overflow-hidden">
                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950 shrink-0">
                   <h3 className="text-lg font-bold text-slate-800 dark:text-white uppercase tracking-wide">
                      {editingId ? 'Modifier l\'annonce' : 'Nouvelle Annonce'}
@@ -679,6 +708,7 @@ export const Infos: React.FC = () => {
                
                <div className="overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900">
                   <form onSubmit={handleSubmit} className="space-y-6">
+                     {/* TITRE */}
                      <div>
                         <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Titre</label>
                         <input 
@@ -691,6 +721,7 @@ export const Infos: React.FC = () => {
                         />
                      </div>
 
+                     {/* URGENCE */}
                      <div>
                         <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Niveau d'urgence</label>
                         <div className="flex gap-3">
@@ -711,6 +742,7 @@ export const Infos: React.FC = () => {
                         </div>
                      </div>
 
+                     {/* CONTENU */}
                      <div>
                         <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Contenu</label>
                         <textarea 
@@ -722,6 +754,7 @@ export const Infos: React.FC = () => {
                         />
                      </div>
 
+                     {/* DUREE & LIEN */}
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Durée (Heures) - Optionnel</label>
@@ -752,46 +785,59 @@ export const Infos: React.FC = () => {
                         </div>
                      </div>
 
+                     {/* PIECES JOINTES */}
                      <div>
                         <div className="flex justify-between items-center mb-2">
-                           <label className="block text-xs font-bold text-slate-500 uppercase">Pièces Jointes</label>
+                           <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                              <Paperclip className="w-3 h-3" /> Pièces Jointes
+                           </label>
                            <button 
                               type="button" 
                               onClick={() => fileInputRef.current?.click()}
-                              className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+                              className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1 bg-sky-50 dark:bg-sky-900/20 px-2 py-1 rounded transition"
                            >
-                              <Plus className="w-3 h-3" /> Ajouter
+                              <Plus className="w-3 h-3" /> Ajouter fichier
                            </button>
                         </div>
                         <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,application/pdf" />
                         
                         {attachments.length === 0 ? (
-                           <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-[#87CEEB] hover:bg-sky-50 dark:hover:bg-sky-900/10 transition">
+                           <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-[#87CEEB] hover:bg-sky-50 dark:hover:bg-sky-900/10 transition group">
+                              <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition">
+                                 <Upload className="w-5 h-5 text-slate-400 group-hover:text-sky-500" />
+                              </div>
                               <p className="text-sm text-slate-400 font-medium">Cliquez pour ajouter une image ou un PDF (Max 3Mo)</p>
                            </div>
                         ) : (
                            <div className="space-y-2">
                               {attachments.map(att => (
-                                 <div key={att.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                 <div key={att.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-sky-200 transition">
                                     <div className="flex items-center gap-3 overflow-hidden">
-                                       <div className={`p-2 rounded-lg ${att.type === 'PDF' ? 'bg-red-100 text-red-500' : 'bg-purple-100 text-purple-500'}`}>
+                                       <div className={`p-2 rounded-lg shrink-0 ${att.type === 'PDF' ? 'bg-red-100 text-red-500' : 'bg-purple-100 text-purple-500'}`}>
                                           {att.type === 'PDF' ? <FileText className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
                                        </div>
                                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{att.name}</span>
                                     </div>
-                                    <button type="button" onClick={() => removeAttachment(att.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
+                                    <button type="button" onClick={() => removeAttachment(att.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
                                  </div>
                               ))}
+                              <button 
+                                type="button" 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-full py-2 text-xs font-bold text-slate-500 hover:text-sky-600 border border-dashed border-slate-200 dark:border-slate-700 hover:border-sky-300 rounded-lg transition"
+                              >
+                                + Ajouter un autre fichier
+                              </button>
                            </div>
                         )}
                      </div>
 
-                     <div className="flex flex-col-reverse md:flex-row gap-3 pt-4">
-                        <button type="button" onClick={() => setIsModalOpen(false)} className="w-full md:w-1/3 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition active:scale-95">
+                     <div className="flex flex-col-reverse md:flex-row gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <button type="button" onClick={() => setIsModalOpen(false)} className="w-full md:w-1/3 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition active:scale-95">
                            Annuler
                         </button>
-                        <button type="submit" className="w-full md:w-2/3 btn-primary text-white py-3 rounded-xl font-bold shadow-lg shadow-[#87CEEB]/30 transition active:scale-95">
-                           {editingId ? 'Mettre à jour' : 'Publier'}
+                        <button type="submit" className="w-full md:w-2/3 btn-primary text-white py-3 rounded-xl font-bold shadow-lg shadow-[#87CEEB]/30 transition active:scale-95 flex items-center justify-center gap-2">
+                           {editingId ? <><Pencil className="w-4 h-4"/> Mettre à jour</> : <><Send className="w-4 h-4"/> Publier l'annonce</>}
                         </button>
                      </div>
                   </form>

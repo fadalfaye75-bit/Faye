@@ -131,7 +131,7 @@ export interface EmailConfig {
 export interface ReminderSettings {
   enabled: boolean;
   courseDelay: number; // Minutes avant le cours
-  examDelay: number;   // Minutes avant l'examen
+  examDelay: number;   // Minutes avant le cours
   meetDelay: number;   // Minutes avant le meet
 }
 
@@ -212,6 +212,7 @@ export interface AppContextType {
   login: (email: string, password?: string, rememberMe?: boolean) => Promise<boolean>; 
   logout: () => void;
   getCurrentClass: () => ClassGroup | undefined;
+  uploadFile: (file: File, bucket: string) => Promise<string | null>;
   
   // Content Management (CRUD)
   addAnnouncement: (item: Omit<Announcement, 'id' | 'authorId' | 'classId'>, targetRoles?: Role[]) => Promise<void>;

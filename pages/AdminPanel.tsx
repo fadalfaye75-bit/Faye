@@ -2,7 +2,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, User, ClassGroup } from '../types';
-import { Users, Shield, Trash2, Plus, Pencil, Save, AlertTriangle, Download, Upload, School, UserCircle, X, Copy, Check, Mail, Calendar, Info, RefreshCw, Eye, Search, Filter, Send, Settings, Lock, Server, Terminal, ExternalLink, CheckCircle } from 'lucide-react';
+import { Users, Shield, Trash2, Plus, Pencil, Save, AlertTriangle, Download, Upload, School, UserCircle, X, Copy, Check, Mail, Calendar, Info, RefreshCw, Eye, Search, Filter, Send, Settings, Lock, Server, Terminal, ExternalLink, CheckCircle, Bell } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '../components/UserAvatar';
@@ -13,10 +13,11 @@ export const AdminPanel: React.FC = () => {
     addClass, updateClass, deleteClass, 
     addUser, importUsers, updateUser, deleteUser, 
     auditLogs, sentEmails, addNotification, resendEmail,
-    emailConfig, updateEmailConfig
+    emailConfig, updateEmailConfig,
+    reminderSettings, updateReminderSettings
   } = useApp();
   
-  const [activeTab, setActiveTab] = useState<'users' | 'classes' | 'logs' | 'emails'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'classes' | 'logs' | 'emails' | 'settings'>('users');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
@@ -30,6 +31,14 @@ export const AdminPanel: React.FC = () => {
   useEffect(() => {
     setTempSchoolName(schoolName);
   }, [schoolName]);
+
+  // --- REMINDER SETTINGS STATE ---
+  const [localReminders, setLocalReminders] = useState(reminderSettings);
+  
+  // Sync local reminders when global state changes
+  useEffect(() => {
+    setLocalReminders(reminderSettings);
+  }, [reminderSettings]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -141,6 +150,11 @@ export const AdminPanel: React.FC = () => {
         senderName: schoolName
     });
     addNotification("Configuration email mise à jour", "SUCCESS");
+  };
+
+  const handleSaveReminders = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateReminderSettings(localReminders);
   };
 
   const openCreate = () => {
@@ -330,7 +344,8 @@ export const AdminPanel: React.FC = () => {
     { id: 'users', label: 'Utilisateurs', icon: Users },
     ...(isAdmin ? [{ id: 'classes', label: 'Classes', icon: School }] : []),
     { id: 'logs', label: 'Journal', icon: Info },
-    { id: 'emails', label: 'Emails', icon: Mail }
+    { id: 'emails', label: 'Emails', icon: Mail },
+    { id: 'settings', label: 'Réglages', icon: Settings }
   ];
 
   return (
@@ -672,6 +687,86 @@ export const AdminPanel: React.FC = () => {
                 </div>
              </div>
          </div>
+      )}
+
+      {/* Content: Settings */}
+      {activeTab === 'settings' && (
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2 mb-6">
+                      <Bell className="w-5 h-5 text-indigo-600" />
+                      <h3 className="font-bold text-lg text-slate-800 dark:text-white">Préférences de Rappel</h3>
+                  </div>
+                  
+                  <form onSubmit={handleSaveReminders} className="space-y-6 max-w-2xl">
+                      {/* Enable Switch */}
+                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <div>
+                              <span className="font-bold text-slate-700 dark:text-white block">Activer les notifications</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">Recevoir des alertes avant les événements</span>
+                          </div>
+                          <button 
+                              type="button"
+                              onClick={() => setLocalReminders({...localReminders, enabled: !localReminders.enabled})}
+                              className={`w-12 h-6 rounded-full p-1 transition duration-300 ease-in-out ${localReminders.enabled ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                          >
+                              <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition duration-300 ${localReminders.enabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                          </button>
+                      </div>
+
+                      <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-opacity duration-300 ${localReminders.enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Cours (Minutes avant)</label>
+                              <select 
+                                  value={localReminders.courseDelay}
+                                  onChange={(e) => setLocalReminders({...localReminders, courseDelay: parseInt(e.target.value)})}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 dark:text-white"
+                              >
+                                  <option value="5">5 minutes</option>
+                                  <option value="10">10 minutes</option>
+                                  <option value="15">15 minutes</option>
+                                  <option value="30">30 minutes</option>
+                                  <option value="60">1 heure</option>
+                              </select>
+                          </div>
+
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Visio (Minutes avant)</label>
+                              <select 
+                                  value={localReminders.meetDelay}
+                                  onChange={(e) => setLocalReminders({...localReminders, meetDelay: parseInt(e.target.value)})}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 dark:text-white"
+                              >
+                                  <option value="5">5 minutes</option>
+                                  <option value="10">10 minutes</option>
+                                  <option value="15">15 minutes</option>
+                                  <option value="30">30 minutes</option>
+                              </select>
+                          </div>
+
+                          <div className="md:col-span-2">
+                              <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Examens (Temps avant)</label>
+                              <select 
+                                  value={localReminders.examDelay}
+                                  onChange={(e) => setLocalReminders({...localReminders, examDelay: parseInt(e.target.value)})}
+                                  className="w-full p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-indigo-500 dark:text-white"
+                              >
+                                  <option value="60">1 heure</option>
+                                  <option value="120">2 heures</option>
+                                  <option value="1440">24 heures (1 jour)</option>
+                                  <option value="2880">48 heures (2 jours)</option>
+                              </select>
+                          </div>
+                      </div>
+
+                      <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                          <button type="submit" className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-500/20">
+                              Enregistrer les préférences
+                          </button>
+                      </div>
+                  </form>
+              </div>
+          </div>
       )}
 
       {/* --- CREATE / EDIT MODAL --- */}

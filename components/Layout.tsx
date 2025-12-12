@@ -70,7 +70,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
     theme,
     toggleTheme,
     reminderSettings,
-    updateReminderSettings
+    updateReminderSettings,
+    uploadFile
   } = useApp();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -107,7 +108,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
   const filteredNavItems = navItems.filter(item => user && item.roles.includes(user.role));
   const unreadCount = notificationHistory.filter(n => !n.read).length;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && user) {
       if (file.size > 3 * 1024 * 1024) {
@@ -115,12 +116,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
         return;
       }
       
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateUser(user.id, { avatar: reader.result as string });
-        setIsProfileModalOpen(false);
-      };
-      reader.readAsDataURL(file);
+      const publicUrl = await uploadFile(file, 'avatars');
+      if (publicUrl) {
+          updateUser(user.id, { avatar: publicUrl });
+          setIsProfileModalOpen(false);
+          addNotification("Avatar mis à jour", "SUCCESS");
+      }
     }
   };
 
