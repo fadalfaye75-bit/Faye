@@ -23,6 +23,7 @@ export const Meet: React.FC = () => {
   const [date, setDate] = useState('');
 
   const [targetRoles, setTargetRoles] = useState<Role[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   
   // Permission: Responsable ET Admin peuvent créer
   const canManage = user?.role === Role.RESPONSIBLE || user?.role === Role.ADMIN;
@@ -36,7 +37,10 @@ export const Meet: React.FC = () => {
     setSubject('');
     setTeacher(user?.name || '');
     setLink('');
-    setDate('');
+    // Default to current time for easier creation
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setDate(now.toISOString().slice(0, 16));
     setTargetRoles([]);
     setIsModalOpen(true);
   };
@@ -91,10 +95,11 @@ export const Meet: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // --- FILTRE AUTOMATIQUE : Masquer les meets passés de plus d'une heure ---
+  // --- FILTRE : Afficher sauf si historique masqué ---
   const sortedMeets = [...myMeets]
     .filter(meet => {
-        // On considère qu'un meet est fini 1h après son début
+        if (showHistory) return true;
+        // Par défaut, on masque les meets passés de plus d'une heure
         const meetEnd = addMinutes(new Date(meet.date), 60);
         return isAfter(meetEnd, new Date());
     })
@@ -110,11 +115,21 @@ export const Meet: React.FC = () => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium text-lg">Accès direct aux cours en ligne à venir.</p>
         </div>
-        {canManage && (
-          <button onClick={openCreate} className="w-full md:w-auto btn-primary text-white px-6 py-3 rounded-xl font-bold active:scale-95 transition flex items-center justify-center gap-2 shadow-md">
-            <Plus className="w-5 h-5"/> <span>Nouveau Meet</span>
-          </button>
-        )}
+        
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+             <button 
+                onClick={() => setShowHistory(!showHistory)}
+                className={`w-full md:w-auto flex-1 md:flex-none justify-center border px-4 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-sm active:scale-95 ${showHistory ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'}`}
+             >
+                {showHistory ? 'Masquer historique' : 'Voir historique'}
+             </button>
+
+            {canManage && (
+              <button onClick={openCreate} className="w-full md:w-auto btn-primary text-white px-6 py-3 rounded-xl font-bold active:scale-95 transition flex items-center justify-center gap-2 shadow-md">
+                <Plus className="w-5 h-5"/> <span>Nouveau Meet</span>
+              </button>
+            )}
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -122,6 +137,7 @@ export const Meet: React.FC = () => {
           <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
              <Video className="w-16 h-16 mx-auto mb-4 opacity-20 text-slate-900 dark:text-white" />
              <p className="font-medium text-lg text-slate-500">Aucun cours vidéo programmé.</p>
+             {!showHistory && <p className="text-sm text-slate-400 mt-2 cursor-pointer hover:underline" onClick={() => setShowHistory(true)}>Voir l'historique ?</p>}
           </div>
         )}
         {sortedMeets.map((meet) => {
@@ -129,12 +145,13 @@ export const Meet: React.FC = () => {
            const now = new Date();
            const isSoon = isAfter(meetDate, now) && isBefore(meetDate, addMinutes(now, 60));
            const isLive = isBefore(meetDate, now) && isBefore(now, addMinutes(meetDate, 60));
+           const isPast = isBefore(now, addMinutes(meetDate, 60)) === false;
 
            const isAuthor = user?.id === meet.authorId;
            const canManageThisMeet = isAuthor || isAdmin;
 
            return (
-            <div key={meet.id} className={`bg-white dark:bg-slate-900 rounded-2xl border p-5 md:p-6 flex flex-col md:flex-row items-center gap-6 shadow-sm hover:-translate-y-1 transition duration-300 group ${isLive || isSoon ? 'border-emerald-500 shadow-emerald-500/10 ring-1 ring-emerald-500/20' : 'border-slate-200 dark:border-slate-800'}`}>
+            <div key={meet.id} className={`bg-white dark:bg-slate-900 rounded-2xl border p-5 md:p-6 flex flex-col md:flex-row items-center gap-6 shadow-sm hover:-translate-y-1 transition duration-300 group ${isLive || isSoon ? 'border-emerald-500 shadow-emerald-500/10 ring-1 ring-emerald-500/20' : isPast ? 'opacity-75 grayscale' : 'border-slate-200 dark:border-slate-800'}`}>
                
                {/* Date & Time */}
                <div className="w-full md:w-auto flex justify-between md:block items-center border-b md:border-b-0 pb-4 md:pb-0 border-slate-100 dark:border-slate-800 mb-2 md:mb-0 md:min-w-[100px]">
@@ -142,7 +159,7 @@ export const Meet: React.FC = () => {
                     <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">{format(meetDate, 'EEEE', { locale: fr })}</span>
                     <span className="text-sm font-bold text-slate-500 uppercase tracking-wide">{format(meetDate, 'MMM', { locale: fr })}</span>
                     <span className="text-3xl md:text-4xl font-black text-slate-800 dark:text-white">{format(meetDate, 'd')}</span>
-                    <span className={`text-xs md:text-sm font-bold text-white px-3 py-1 rounded-full mt-2 ${isLive ? 'bg-red-500 animate-pulse' : 'bg-slate-800 dark:bg-slate-700'}`}>
+                    <span className={`text-xs md:text-sm font-bold text-white px-3 py-1 rounded-full mt-2 ${isLive ? 'bg-red-500 animate-pulse' : isPast ? 'bg-slate-400' : 'bg-slate-800 dark:bg-slate-700'}`}>
                       {format(meetDate, 'HH:mm')}
                     </span>
                  </div>
@@ -169,6 +186,7 @@ export const Meet: React.FC = () => {
                         {isLive ? 'SESSION EN COURS' : 'DÉMARRE BIENTÔT'}
                      </div>
                   )}
+                  {isPast && <div className="mt-2 text-xs font-bold text-slate-400 uppercase">Terminé</div>}
                </div>
 
                {/* Actions */}
@@ -179,6 +197,7 @@ export const Meet: React.FC = () => {
                      rel="noreferrer" 
                      className={`w-full md:w-auto text-white px-6 py-3.5 rounded-xl font-bold transition flex items-center justify-center gap-2 active:translate-y-1 shadow-md
                        ${isLive || isSoon ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' : 'bg-slate-800 hover:bg-slate-700 shadow-slate-800/20'}
+                       ${isPast ? 'opacity-50 pointer-events-none' : ''}
                      `}
                    >
                      <span>Rejoindre</span> <ExternalLink className="w-4 h-4" />

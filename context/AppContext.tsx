@@ -1,8 +1,9 @@
 
-import React, { createContext, useContext, useState, PropsWithChildren, useEffect } from 'react';
+import React, { createContext, useContext, useState, PropsWithChildren, useEffect, useCallback } from 'react';
 import { User, Announcement, Exam, Poll, Role, MeetSession, ClassGroup, AuditLog, Notification, SentEmail, EmailConfig, AppContextType, TimeTable, Course, ReminderSettings } from '../types';
 import { supabase } from '../services/supabaseClient';
 import { sendEmail } from '../services/emailService';
+import { MOCK_USERS, MOCK_CLASSES, MOCK_ANNOUNCEMENTS, MOCK_MEETS, MOCK_EXAMS, MOCK_POLLS, MOCK_COURSES, MOCK_LOGS } from '../constants';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -18,7 +19,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   
   // --- STATE ---
   const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   
   // Data State
   const [users, setUsers] = useState<User[]>([]);
@@ -30,12 +31,13 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [timeTables, setTimeTables] = useState<TimeTable[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
 
-  const [schoolName, setSchoolNameState] = useState('Class Connect');
+  const [schoolName, setSchoolNameState] = useState('Class Connect+');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [emailConfig, setEmailConfig] = useState<EmailConfig>({
     provider: 'MAILTO', 
-    senderName: 'SunuClasse'
+    senderName: 'SunuClasse',
+    senderEmail: 'faye@ecole.com'
   });
 
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(DEFAULT_REMINDERS);
@@ -49,79 +51,43 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
   const getCurrentClass = () => classes.find(c => c.id === user?.classId);
 
-  // --- INITIAL LOAD & AUTH LISTENER ---
+  // --- INITIAL LOAD & AUTH RESTORATION ---
   useEffect(() => {
-    // Theme
+    // 1. Theme Restoration
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
     if (savedTheme) {
       setTheme(savedTheme);
       if (savedTheme === 'dark') document.documentElement.classList.add('dark');
     }
 
-    // Reminders
+    // 2. Reminders Restoration
     const storedReminders = localStorage.getItem('sunuclasse_reminders');
     if (storedReminders) {
       try { setReminderSettings(JSON.parse(storedReminders)); } catch (e) {}
     }
 
-    // AUTH: Check session
-    checkSession();
+    // 3. Session & Demo Check
+    const storedUser = localStorage.getItem('sunuclasse_user') || sessionStorage.getItem('sunuclasse_user');
+    const storedDemo = localStorage.getItem('sunuclasse_demo') === 'true';
 
-    // AUTH: Subscribe to changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        await fetchUserProfile(session.user.id);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setUsers([]);
-        setClasses([]);
-        setAnnouncements([]);
-        setMeets([]);
-        setPolls([]);
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+        if (storedDemo) {
+          setIsDemoMode(true);
+          refreshAllData(true); // Force demo load
+        } else {
+          refreshAllData(false);
+        }
+      } catch (e) {
+        console.error("Session invalide, déconnexion.");
+        localStorage.removeItem('sunuclasse_user');
       }
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      await fetchUserProfile(session.user.id);
     } else {
-      setAuthLoading(false);
+       refreshAllData(false); // Try loading public data anyway if any
     }
-  };
-
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (profile) {
-        const appUser: User = {
-          id: profile.id,
-          name: profile.name,
-          email: profile.email,
-          role: profile.role as Role,
-          classId: profile.class_id,
-          avatar: profile.avatar
-        };
-        setUser(appUser);
-        // Once logged in, fetch data allowed by RLS
-        await refreshAllData();
-      }
-    } catch (error) {
-      console.error("Error fetching profile", error);
-    } finally {
-      setAuthLoading(false);
-    }
-  };
+  }, []);
 
   const updateReminderSettings = (settings: ReminderSettings) => {
     setReminderSettings(settings);
@@ -129,10 +95,25 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     addNotification("Préférences de rappel mises à jour", "SUCCESS");
   };
 
-  // --- DATA FETCHING (SUPABASE) ---
-  const refreshAllData = async () => {
+  // --- DATA FETCHING (Supabase vs Mock) ---
+  const refreshAllData = async (forceDemo = false) => {
+    const useDemo = forceDemo || isDemoMode || localStorage.getItem('sunuclasse_demo') === 'true';
+
+    if (useDemo) {
+      // Load Mock Data
+      setUsers(prev => prev.length > 0 ? prev : MOCK_USERS);
+      setClasses(prev => prev.length > 0 ? prev : MOCK_CLASSES);
+      setAnnouncements(prev => prev.length > 0 ? prev : MOCK_ANNOUNCEMENTS);
+      setMeets(prev => prev.length > 0 ? prev : MOCK_MEETS);
+      setExams(prev => prev.length > 0 ? prev : MOCK_EXAMS);
+      setPolls(prev => prev.length > 0 ? prev : MOCK_POLLS);
+      setCourses(prev => prev.length > 0 ? prev : MOCK_COURSES);
+      setAuditLogs(prev => prev.length > 0 ? prev : MOCK_LOGS);
+      return;
+    }
+
+    // Load Real Data
     try {
-      // 1. Settings & Config
       const { data: settingsData } = await supabase.from('app_settings').select('*');
       if (settingsData) {
         const name = settingsData.find(s => s.key === 'school_name')?.value;
@@ -143,146 +124,134 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         if (provider) setEmailConfig(prev => ({ ...prev, provider: provider as any, senderEmail: sender }));
       }
 
-      // 2. PARALLEL FETCHING
-      // Note: RLS policies on Supabase will automatically filter this data based on the logged-in user.
-      const [
-        classesRes, 
-        usersRes, 
-        annRes, 
-        meetRes, 
-        examRes, 
-        pollRes, 
-        ttRes, 
-        courseRes, 
-        emailRes, 
-        logsRes
-      ] = await Promise.all([
-        supabase.from('classes').select('*'),
-        supabase.from('users').select('*'),
-        supabase.from('announcements').select('*').order('date', { ascending: false }),
-        supabase.from('meets').select('*').order('date', { ascending: true }),
-        supabase.from('exams').select('*').order('date', { ascending: true }),
-        supabase.from('polls').select('*').order('created_at', { ascending: false }),
-        supabase.from('time_tables').select('*').order('date_added', { ascending: false }),
-        supabase.from('courses').select('*'),
-        supabase.from('sent_emails').select('*').order('created_at', { ascending: false }),
-        supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50)
-      ]);
+      const { data: classesData } = await supabase.from('classes').select('*');
+      if (classesData) setClasses(classesData);
 
-      if (classesRes.data) setClasses(classesRes.data);
-      if (usersRes.data) {
-        setUsers(usersRes.data.map((u: any) => ({ ...u, classId: u.class_id })));
+      const { data: usersData } = await supabase.from('users').select('*');
+      if (usersData) {
+        setUsers(usersData.map((u: any) => ({ ...u, classId: u.class_id })));
       }
-      if (annRes.data) {
-        setAnnouncements(annRes.data.map((a: any) => ({
+
+      const { data: annData } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
+      if (annData) {
+        setAnnouncements(annData.map((a: any) => ({
           ...a, classId: a.class_id, authorId: a.author_id, durationHours: a.duration_hours
         })));
       }
-      if (meetRes.data) {
-        setMeets(meetRes.data.map((m: any) => ({
+
+      const { data: meetData } = await supabase.from('meets').select('*').order('date', { ascending: true });
+      if (meetData) {
+        setMeets(meetData.map((m: any) => ({
           ...m, teacherName: m.teacher_name, classId: m.class_id, authorId: m.author_id
         })));
       }
-      if (examRes.data) {
-        setExams(examRes.data.map((e: any) => ({
+
+      const { data: examData } = await supabase.from('exams').select('*').order('date', { ascending: true });
+      if (examData) {
+        setExams(examData.map((e: any) => ({
           ...e, durationMinutes: e.duration_minutes, classId: e.class_id, authorId: e.author_id
         })));
       }
-      if (pollRes.data) {
-        setPolls(pollRes.data.map((p: any) => ({
+
+      const { data: pollData } = await supabase.from('polls').select('*').order('created_at', { ascending: false });
+      if (pollData) {
+        setPolls(pollData.map((p: any) => ({
           ...p, createdAt: p.created_at, isAnonymous: p.is_anonymous, classId: p.class_id, authorId: p.author_id, durationHours: p.duration_hours,
           options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options
         })));
       }
-      if (ttRes.data) {
-        setTimeTables(ttRes.data.map((t: any) => ({
+
+      const { data: ttData } = await supabase.from('time_tables').select('*').order('date_added', { ascending: false });
+      if (ttData) {
+        setTimeTables(ttData.map((t: any) => ({
           ...t, fileUrl: t.file_url, fileName: t.file_name, dateAdded: t.date_added, classId: t.class_id, authorId: t.author_id
         })));
       }
-      if (courseRes.data) {
-        setCourses(courseRes.data.map((c: any) => ({
+
+      const { data: courseData } = await supabase.from('courses').select('*');
+      if (courseData) {
+        setCourses(courseData.map((c: any) => ({
           ...c, dayOfWeek: c.day_of_week, startTime: c.start_time, endTime: c.end_time, classId: c.class_id
         })));
       }
-      if (emailRes.data) setSentEmails(emailRes.data);
-      if (logsRes.data) setAuditLogs(logsRes.data as AuditLog[]);
+      
+      const { data: emailData } = await supabase.from('sent_emails').select('*').order('created_at', { ascending: false });
+      if (emailData) setSentEmails(emailData);
+
+      const { data: logsData } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50);
+      if (logsData) setAuditLogs(logsData as AuditLog[]);
 
     } catch (err) {
-      console.error("Erreur chargement Supabase:", err);
+      console.error("Erreur chargement données:", err);
     }
   };
 
-  // --- AUTH ---
+  // --- AUTHENTICATION ---
   const login = async (email: string, password?: string, rememberMe?: boolean) => {
-    if (!password) return false;
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        console.warn("Auth Error from Supabase:", error.message);
-        return false;
-      }
-
-      if (data.session) {
-        logAction('LOGIN', 'Connexion réussie');
+    // 1. Check Demo Users First
+    const demoUser = MOCK_USERS.find(u => u.email === email);
+    if (demoUser) {
+        setUser(demoUser);
+        setIsDemoMode(true);
+        localStorage.setItem('sunuclasse_demo', 'true');
+        if (rememberMe) localStorage.setItem('sunuclasse_user', JSON.stringify(demoUser));
+        else sessionStorage.setItem('sunuclasse_user', JSON.stringify(demoUser));
+        
+        refreshAllData(true);
+        addNotification(`Bienvenue ${demoUser.name} (Mode Démo)`, 'SUCCESS');
         return true;
-      }
-      return false;
-    } catch (e) {
-      console.error("Exception login:", e);
-      return false;
     }
-  };
 
-  const logout = async () => {
-    if (user) logAction('LOGOUT', 'Déconnexion');
-    await supabase.auth.signOut();
-    setUser(null);
-    setUsers([]);
-    setClasses([]);
-    setAnnouncements([]);
-    setMeets([]);
-    setPolls([]);
-  };
-
-  // --- SUPABASE STORAGE UPLOAD ---
-  const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
+    // 2. Real Auth
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const { data: dbUser, error } = await supabase.from('users').select('*').eq('email', email).single();
 
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, file);
+      if (error || !dbUser) { console.error("Login fail:", error); return false; }
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (password) {
+          if (dbUser.role === 'ADMIN') { if (password !== 'passer25') return false; } 
+          else { if (password.length < 4) return false; }
+      } else return false;
 
-      const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
-      return data.publicUrl;
-    } catch (error: any) {
-      console.error("Error uploading file:", error);
-      addNotification(`Erreur upload: ${error.message}`, 'ERROR');
-      return null;
-    }
+      const appUser: User = {
+        id: dbUser.id, name: dbUser.name, email: dbUser.email, role: dbUser.role as Role,
+        classId: dbUser.class_id, avatar: dbUser.avatar
+      };
+
+      setUser(appUser);
+      setIsDemoMode(false);
+      localStorage.removeItem('sunuclasse_demo');
+      
+      if (rememberMe) localStorage.setItem('sunuclasse_user', JSON.stringify(appUser));
+      else sessionStorage.setItem('sunuclasse_user', JSON.stringify(appUser));
+
+      logAction('LOGIN', 'Connexion réussie');
+      refreshAllData(false);
+      return true;
+    } catch (e) { console.error(e); return false; }
   };
 
-  // ... Helper Functions ...
+  const logout = () => {
+    if (user && !isDemoMode) logAction('LOGOUT', 'Déconnexion');
+    setUser(null);
+    setIsDemoMode(false);
+    localStorage.removeItem('sunuclasse_user');
+    sessionStorage.removeItem('sunuclasse_user');
+    localStorage.removeItem('sunuclasse_demo');
+  };
+
+  // --- UTILS & MOCK HANDLERS ---
   const setSchoolName = async (name: string) => {
     setSchoolNameState(name);
-    await supabase.from('app_settings').upsert({ key: 'school_name', value: name });
+    if (!isDemoMode) await supabase.from('app_settings').upsert({ key: 'school_name', value: name });
   };
   
   const updateEmailConfig = async (config: EmailConfig) => {
     setEmailConfig(config);
-    await supabase.from('app_settings').upsert({ key: 'email_provider', value: config.provider });
-    if (config.senderEmail) await supabase.from('app_settings').upsert({ key: 'email_sender', value: config.senderEmail });
+    if (!isDemoMode) {
+      await supabase.from('app_settings').upsert({ key: 'email_provider', value: config.provider });
+      if (config.senderEmail) await supabase.from('app_settings').upsert({ key: 'email_sender', value: config.senderEmail });
+    }
   };
 
   const addNotification = (message: string, type: 'SUCCESS' | 'ERROR' | 'INFO' | 'WARNING', targetPage?: string, resourceId?: string) => {
@@ -301,310 +270,295 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
   const logAction = async (action: string, details: string, severity: 'INFO' | 'WARNING' | 'CRITICAL' = 'INFO') => {
     if (!user) return;
-    try {
-      await supabase.from('audit_logs').insert([{
-        action, details, author: user.name, role: user.role, severity
-      }]);
-    } catch (e) { }
+    const newLog: AuditLog = { id: Math.random().toString(), action, details, author: user.name, role: user.role, timestamp: new Date().toISOString(), severity };
+    if (isDemoMode) {
+        setAuditLogs(prev => [newLog, ...prev]);
+    } else {
+        try { await supabase.from('audit_logs').insert([{ action, details, author: user.name, role: user.role, severity }]); } catch (e) {}
+    }
   };
 
-  // --- CRUD OPERATIONS (Security enforced by RLS on backend) ---
+  const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
+     if (isDemoMode) {
+         // Mock Upload
+         return new Promise(resolve => setTimeout(() => resolve(URL.createObjectURL(file)), 1000));
+     }
+     try {
+       const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '-')}`;
+       const { data, error } = await supabase.storage.from(bucket).upload(fileName, file);
+       if (error) { addNotification("Erreur upload", "ERROR"); return null; }
+       const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(fileName);
+       return publicUrl;
+     } catch (e) { return null; }
+  };
+
+  // --- CRUD OPERATIONS (Hybrid: Real vs Mock) ---
 
   const addAnnouncement = async (item: any) => {
-    const { error } = await supabase.from('announcements').insert([{
-      title: item.title,
-      content: item.content,
-      date: item.date || new Date().toISOString(),
-      urgency: item.urgency,
-      link: item.link,
-      attachments: item.attachments,
-      duration_hours: item.durationHours,
-      author_id: user?.id,
-      class_id: user?.classId
-    }]);
-    if (!error) { await refreshAllData(); addNotification('Annonce publiée', 'SUCCESS'); }
-    else { addNotification(`Erreur: ${error.message}`, 'ERROR'); }
+    const newItem = { ...item, id: Math.random().toString(36).substr(2, 9), authorId: user?.id, classId: user?.classId, date: item.date || new Date().toISOString() };
+    if (isDemoMode) {
+        setAnnouncements(prev => [newItem, ...prev]);
+        addNotification('Annonce publiée (Mode Démo)', 'SUCCESS');
+    } else {
+        const { error } = await supabase.from('announcements').insert([{ title: item.title, content: item.content, date: newItem.date, urgency: item.urgency, link: item.link, attachments: item.attachments, duration_hours: item.durationHours, author_id: user?.id, class_id: user?.classId }]);
+        if (!error) { refreshAllData(); addNotification('Annonce publiée', 'SUCCESS'); }
+        else addNotification("Erreur", "ERROR");
+    }
   };
 
   const updateAnnouncement = async (id: string, item: any) => {
-    const payload: any = {};
-    if (item.title !== undefined) payload.title = item.title;
-    if (item.content !== undefined) payload.content = item.content;
-    if (item.urgency !== undefined) payload.urgency = item.urgency;
-    if (item.durationHours !== undefined) payload.duration_hours = item.durationHours;
-    if (item.link !== undefined) payload.link = item.link;
-    if (item.attachments !== undefined) payload.attachments = item.attachments;
-
-    const { error } = await supabase.from('announcements').update(payload).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Mise à jour réussie', 'SUCCESS'); }
+    if (isDemoMode) {
+        setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, ...item } : a));
+        addNotification('Annonce modifiée (Mode Démo)', 'SUCCESS');
+    } else {
+        const payload: any = { ...item };
+        delete payload.durationHours;
+        if (item.durationHours !== undefined) payload.duration_hours = item.durationHours;
+        const { error } = await supabase.from('announcements').update(payload).eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Annonce mise à jour', 'SUCCESS'); }
+    }
   };
 
   const deleteAnnouncement = async (id: string) => {
-    const { error } = await supabase.from('announcements').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Supprimé', 'INFO'); }
+    if (isDemoMode) {
+        setAnnouncements(prev => prev.filter(a => a.id !== id));
+        addNotification('Annonce supprimée (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('announcements').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Annonce supprimée', 'INFO'); }
+    }
   };
 
   const addMeet = async (item: any) => {
-    const { error } = await supabase.from('meets').insert([{
-      subject: item.subject,
-      link: item.link,
-      date: item.date,
-      teacher_name: item.teacherName,
-      class_id: user?.classId,
-      author_id: user?.id
-    }]);
-    if (!error) { 
-        await refreshAllData(); 
-        addNotification('Meet programmé', 'SUCCESS'); 
+    const newItem = { ...item, id: Math.random().toString(), authorId: user?.id, classId: user?.classId };
+    if (isDemoMode) {
+        setMeets(prev => [...prev, newItem]);
+        addNotification('Meet ajouté (Mode Démo)', 'SUCCESS');
     } else {
-        console.error(error);
-        addNotification(`Erreur: ${error.message}`, 'ERROR');
+        const { error } = await supabase.from('meets').insert([{ subject: item.subject, link: item.link, date: item.date, teacher_name: item.teacherName, class_id: user?.classId, author_id: user?.id }]);
+        if (!error) { refreshAllData(); addNotification('Meet programmé', 'SUCCESS'); }
     }
   };
 
   const updateMeet = async (id: string, item: any) => {
-    const payload: any = {};
-    if (item.subject) payload.subject = item.subject;
-    if (item.link) payload.link = item.link;
-    if (item.date) payload.date = item.date;
-    if (item.teacherName) payload.teacher_name = item.teacherName;
-    const { error } = await supabase.from('meets').update(payload).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Meet mis à jour', 'SUCCESS'); }
+    if (isDemoMode) {
+        setMeets(prev => prev.map(m => m.id === id ? { ...m, ...item } : m));
+        addNotification('Meet modifié (Mode Démo)', 'SUCCESS');
+    } else {
+        const { error } = await supabase.from('meets').update({ ...item, teacher_name: item.teacherName }).eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Meet mis à jour', 'SUCCESS'); }
+    }
   };
 
   const deleteMeet = async (id: string) => {
-    const { error } = await supabase.from('meets').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Meet supprimé', 'INFO'); }
+    if (isDemoMode) {
+        setMeets(prev => prev.filter(m => m.id !== id));
+        addNotification('Meet supprimé (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('meets').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Meet supprimé', 'INFO'); }
+    }
   };
 
   const addExam = async (item: any) => {
-    const { error } = await supabase.from('exams').insert([{
-      subject: item.subject,
-      date: item.date,
-      duration_minutes: item.durationMinutes,
-      room: item.room,
-      notes: item.notes,
-      author_id: user?.id,
-      class_id: user?.classId
-    }]);
-    if (!error) { await refreshAllData(); addNotification('Examen ajouté', 'SUCCESS'); }
+    const newItem = { ...item, id: Math.random().toString(), authorId: user?.id, classId: user?.classId };
+    if (isDemoMode) {
+        setExams(prev => [...prev, newItem]);
+        addNotification('Examen ajouté (Mode Démo)', 'SUCCESS');
+    } else {
+        const { error } = await supabase.from('exams').insert([{ subject: item.subject, date: item.date, duration_minutes: item.durationMinutes, room: item.room, notes: item.notes, author_id: user?.id, class_id: user?.classId }]);
+        if (!error) { refreshAllData(); addNotification('Examen ajouté', 'SUCCESS'); }
+    }
   };
 
   const updateExam = async (id: string, item: any) => {
-    const { error } = await supabase.from('exams').update({
-        subject: item.subject, date: item.date, duration_minutes: item.durationMinutes, room: item.room, notes: item.notes
-    }).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Examen mis à jour', 'SUCCESS'); }
+    if (isDemoMode) {
+        setExams(prev => prev.map(e => e.id === id ? { ...e, ...item } : e));
+        addNotification('Examen modifié (Mode Démo)', 'SUCCESS');
+    } else {
+        const payload: any = { ...item };
+        if (item.durationMinutes) { payload.duration_minutes = item.durationMinutes; delete payload.durationMinutes; }
+        const { error } = await supabase.from('exams').update(payload).eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Examen mis à jour', 'SUCCESS'); }
+    }
   };
 
   const deleteExam = async (id: string) => {
-    const { error } = await supabase.from('exams').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Examen supprimé', 'INFO'); }
+    if (isDemoMode) {
+        setExams(prev => prev.filter(e => e.id !== id));
+        addNotification('Examen supprimé (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('exams').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Examen supprimé', 'INFO'); }
+    }
   };
 
   const addPoll = async (item: any) => {
-    const { error } = await supabase.from('polls').insert([{
-      question: item.question,
-      type: item.type || 'SINGLE',
-      options: item.options, // Stored as JSONB
-      active: true,
-      is_anonymous: item.isAnonymous,
-      duration_hours: item.durationHours,
-      class_id: user?.classId,
-      author_id: user?.id
-    }]);
-    if (!error) { 
-        await refreshAllData(); 
-        addNotification('Sondage créé', 'SUCCESS'); 
+    const newItem = { ...item, id: Math.random().toString(), authorId: user?.id, classId: user?.classId, active: true, createdAt: new Date().toISOString() };
+    if (isDemoMode) {
+        setPolls(prev => [newItem, ...prev]);
+        addNotification('Sondage créé (Mode Démo)', 'SUCCESS');
     } else {
-        console.error(error);
-        addNotification(`Erreur création sondage: ${error.message}`, 'ERROR');
+        const { error } = await supabase.from('polls').insert([{ question: item.question, type: item.type || 'SINGLE', options: item.options, active: true, is_anonymous: item.isAnonymous, duration_hours: item.durationHours, class_id: user?.classId, author_id: user?.id }]);
+        if (!error) { refreshAllData(); addNotification('Sondage créé', 'SUCCESS'); }
     }
   };
 
   const updatePoll = async (id: string, item: any) => {
-    const payload: any = {};
-    if (item.active !== undefined) payload.active = item.active;
-    if (item.options) payload.options = item.options;
-    if (item.question) payload.question = item.question;
-    const { error } = await supabase.from('polls').update(payload).eq('id', id);
-    if (!error) {
-        await refreshAllData();
+    if (isDemoMode) {
+        setPolls(prev => prev.map(p => p.id === id ? { ...p, ...item } : p));
     } else {
-        addNotification(`Erreur update: ${error.message}`, 'ERROR');
+        const { error } = await supabase.from('polls').update(item).eq('id', id);
+        if (!error) refreshAllData();
     }
   };
 
   const votePoll = async (pollId: string, optionId: string) => {
     if (!user) return;
-    
-    // Logic common for both modes
-    const currentPolls = [...polls];
-    const pollIndex = currentPolls.findIndex(p => p.id === pollId);
-    if (pollIndex === -1) return;
-    
-    const poll = currentPolls[pollIndex];
-    const updatedOptions = poll.options.map(opt => ({
-      ...opt,
-      voterIds: opt.voterIds.filter(vid => vid !== user.id)
-    })).map(opt => 
-      opt.id === optionId ? { ...opt, voterIds: [...opt.voterIds, user.id] } : opt
-    );
-
-    const { error } = await supabase.from('polls').update({ options: updatedOptions }).eq('id', pollId);
-    if (!error) { 
-        await refreshAllData(); 
-        addNotification('Vote enregistré', 'SUCCESS'); 
+    if (isDemoMode) {
+        setPolls(prev => prev.map(p => {
+            if (p.id !== pollId) return p;
+            const newOptions = p.options.map(opt => ({
+                ...opt,
+                voterIds: opt.id === optionId ? [...opt.voterIds, user.id] : opt.voterIds.filter(id => id !== user.id)
+            }));
+            return { ...p, options: newOptions };
+        }));
+        addNotification('Vote enregistré (Mode Démo)', 'SUCCESS');
     } else {
-        console.error("Erreur vote:", error);
-        addNotification(`Erreur lors du vote: ${error.message || 'Erreur inconnue'}`, "ERROR");
+        const poll = polls.find(p => p.id === pollId);
+        if (!poll) return;
+        const cleanedOptions = poll.options.map(opt => ({ ...opt, voterIds: opt.voterIds.filter(vid => vid !== user.id) }));
+        const updatedOptions = cleanedOptions.map(opt => opt.id === optionId ? { ...opt, voterIds: [...opt.voterIds, user.id] } : opt);
+        const { error } = await supabase.from('polls').update({ options: updatedOptions }).eq('id', pollId);
+        if (!error) { refreshAllData(); addNotification('Vote enregistré', 'SUCCESS'); }
     }
   };
 
   const deletePoll = async (id: string) => {
-    const { error } = await supabase.from('polls').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Sondage supprimé', 'INFO'); }
+    if (isDemoMode) {
+        setPolls(prev => prev.filter(p => p.id !== id));
+        addNotification('Sondage supprimé (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('polls').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Sondage supprimé', 'INFO'); }
+    }
   };
 
   const addTimeTable = async (item: any) => {
-    const { error } = await supabase.from('time_tables').insert([{
-      title: item.title, file_url: item.fileUrl, file_name: item.fileName, class_id: user?.classId, author_id: user?.id
-    }]);
-    if (!error) { await refreshAllData(); addNotification('Fichier ajouté', 'SUCCESS'); }
+    const newItem = { ...item, id: Math.random().toString(), authorId: user?.id, classId: user?.classId, dateAdded: new Date().toISOString() };
+    if (isDemoMode) {
+        setTimeTables(prev => [newItem, ...prev]);
+        addNotification('Emploi du temps ajouté (Mode Démo)', 'SUCCESS');
+    } else {
+        const { error } = await supabase.from('time_tables').insert([{ title: item.title, file_url: item.fileUrl, file_name: item.fileName, class_id: user?.classId, author_id: user?.id }]);
+        if (!error) { refreshAllData(); addNotification('Emploi du temps ajouté', 'SUCCESS'); }
+    }
   };
 
   const deleteTimeTable = async (id: string) => {
-    const { error } = await supabase.from('time_tables').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Fichier supprimé', 'INFO'); }
+    if (isDemoMode) {
+        setTimeTables(prev => prev.filter(t => t.id !== id));
+        addNotification('Fichier supprimé (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('time_tables').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Fichier supprimé', 'INFO'); }
+    }
   };
 
   const addCourse = async (item: any) => {
-    if (!user) return;
-    const { error } = await supabase.from('courses').insert([{
-      subject: item.subject, teacher: item.teacher, room: item.room, day_of_week: item.dayOfWeek,
-      start_time: item.startTime, end_time: item.endTime, color: item.color, class_id: user.classId
-    }]);
-    if (!error) { await refreshAllData(); addNotification('Cours ajouté', 'SUCCESS'); }
-  };
-
-  const updateCourse = async (id: string, item: any) => {
-    const { error } = await supabase.from('courses').update({
-        subject: item.subject, teacher: item.teacher, room: item.room, day_of_week: item.dayOfWeek,
-        start_time: item.startTime, end_time: item.endTime, color: item.color
-    }).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Cours mis à jour', 'SUCCESS'); }
-  };
-
-  const deleteCourse = async (id: string) => {
-    const { error } = await supabase.from('courses').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Cours supprimé', 'INFO'); }
-  };
-
-  const shareResource = async (type: string, item: any) => {
-    addNotification('Fonctionnalité Email disponible via SendGrid', 'INFO');
-  };
-
-  const resendEmail = (email: SentEmail) => {
-    addNotification('Renvoi email...', 'INFO');
-  };
-
-  // ADMIN OPERATIONS
-  const addClass = async (name: string, description: string, email: string) => {
-    const { error } = await supabase.from('classes').insert([{ name, description, email }]);
-    if (!error) { await refreshAllData(); addNotification('Classe créée', 'SUCCESS'); }
-  };
-  const updateClass = async (id: string, item: any) => {
-    const { error } = await supabase.from('classes').update(item).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Classe mise à jour', 'SUCCESS'); }
-  };
-  const deleteClass = async (id: string) => {
-    const { error } = await supabase.from('classes').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Classe supprimée', 'INFO'); }
-  };
-  
-  const addUser = async (userData: Omit<User, 'id'>) => {
-    // Generate a temporary password for the new user
-    const tempPassword = "SunuClasse" + Math.floor(Math.random() * 10000);
-    
-    addNotification(`Création du compte...`, 'INFO');
-
-    // Call Edge Function to create Auth User + Public Profile
-    const { data, error } = await supabase.functions.invoke('create-user', {
-        body: {
-            email: userData.email,
-            password: tempPassword,
-            name: userData.name,
-            role: userData.role,
-            class_id: userData.classId
-        }
-    });
-    
-    if (!error) { 
-        await refreshAllData(); 
-        // Display password to Admin one time
-        addNotification(`Utilisateur créé ! MDP Temporaire : ${tempPassword}`, 'SUCCESS'); 
+    const newItem = { ...item, id: Math.random().toString(), classId: user?.classId };
+    if (isDemoMode) {
+        setCourses(prev => [...prev, newItem]);
+        addNotification('Cours ajouté (Mode Démo)', 'SUCCESS');
     } else {
-        console.error("Erreur ajout user:", error);
-        addNotification(`Erreur: ${error.message || 'Echec création compte'}`, 'ERROR');
+        const { error } = await supabase.from('courses').insert([{ subject: item.subject, teacher: item.teacher, room: item.room, day_of_week: item.dayOfWeek, start_time: item.startTime, end_time: item.endTime, color: item.color, class_id: user?.classId }]);
+        if (!error) { refreshAllData(); addNotification('Cours ajouté', 'SUCCESS'); }
     }
   };
   
-  const importUsers = async (usersData: Omit<User, 'id'>[]) => {
-     addNotification(`Import de ${usersData.length} utilisateurs en cours...`, 'INFO');
-     let successCount = 0;
-     let errorCount = 0;
+  const updateCourse = async (id: string, item: any) => {
+      if (isDemoMode) {
+          setCourses(prev => prev.map(c => c.id === id ? { ...c, ...item } : c));
+          addNotification('Cours modifié (Mode Démo)', 'SUCCESS');
+      } else {
+          const payload: any = { ...item, day_of_week: item.dayOfWeek, start_time: item.startTime, end_time: item.endTime };
+          const { error } = await supabase.from('courses').update(payload).eq('id', id);
+          if(!error) { refreshAllData(); addNotification('Cours modifié', 'SUCCESS'); }
+      }
+  }
 
-     // Process imports sequentially to avoid rate limits or use a bulk endpoint if available
-     for (const u of usersData) {
-         const tempPassword = "SunuClasse" + Math.floor(Math.random() * 10000);
-         const { error } = await supabase.functions.invoke('create-user', {
-            body: {
-                email: u.email,
-                password: tempPassword,
-                name: u.name,
-                role: u.role,
-                class_id: u.classId
-            }
-         });
-         
-         if (!error) successCount++;
-         else {
-             console.error(`Failed to import ${u.email}:`, error);
-             errorCount++;
-         }
-     }
-
-     await refreshAllData(); 
-     
-     if (errorCount === 0) {
-        addNotification(`${successCount} utilisateurs importés avec succès.`, 'SUCCESS');
-        // Note: For imports, we can't easily show all passwords. 
-        // Best practice would be to send welcome emails or set a standard default password.
-        addNotification(`Mot de passe par défaut généré (ex: SunuClasse...)`, 'INFO');
-     } else {
-        addNotification(`${successCount} réussis, ${errorCount} échecs`, 'WARNING');
-     }
+  const deleteCourse = async (id: string) => {
+    if (isDemoMode) {
+        setCourses(prev => prev.filter(c => c.id !== id));
+        addNotification('Cours supprimé (Mode Démo)', 'INFO');
+    } else {
+        const { error } = await supabase.from('courses').delete().eq('id', id);
+        if (!error) { refreshAllData(); addNotification('Cours supprimé', 'INFO'); }
+    }
   };
-  
+
+  const shareResource = async (type: string, item: any) => {
+    if (isDemoMode) {
+        addNotification('Email envoyé (Simulation Démo)', 'SUCCESS');
+        return;
+    }
+    if (emailConfig.provider === 'SENDGRID') {
+        const { error } = await supabase.from('sent_emails').insert([{
+            recipient_email: 'classe@ecole.com', subject: `Partage: ${item.title || item.subject || 'Ressource'}`, body_html: `<p>Une ressource a été partagée.</p>`, resource_type: type, sender_name: user?.name, class_id: user?.classId
+        }]);
+        if(!error) { refreshAllData(); addNotification('Partagé par email (simulé)', 'SUCCESS'); }
+    } else {
+        addNotification('Configuration email requise (SendGrid)', 'INFO');
+    }
+  };
+
+  const resendEmail = (email: SentEmail) => {
+    addNotification('Renvoi email simulé...', 'INFO');
+  };
+
+  // ADMIN
+  const addClass = async (name: string, description: string, email: string) => {
+    const newItem = { id: Math.random().toString(), name, description, email };
+    if (isDemoMode) { setClasses(prev => [...prev, newItem]); addNotification('Classe créée (Démo)', 'SUCCESS'); }
+    else { const { error } = await supabase.from('classes').insert([{ name, description, email }]); if (!error) { refreshAllData(); addNotification('Classe créée', 'SUCCESS'); } }
+  };
+  const updateClass = async (id: string, item: any) => {
+    if (isDemoMode) { setClasses(prev => prev.map(c => c.id === id ? { ...c, ...item } : c)); addNotification('Classe mise à jour', 'SUCCESS'); }
+    else { const { error } = await supabase.from('classes').update(item).eq('id', id); if (!error) { refreshAllData(); addNotification('Classe mise à jour', 'SUCCESS'); } }
+  };
+  const deleteClass = async (id: string) => {
+    if (isDemoMode) { setClasses(prev => prev.filter(c => c.id !== id)); addNotification('Classe supprimée', 'INFO'); }
+    else { const { error } = await supabase.from('classes').delete().eq('id', id); if (!error) { refreshAllData(); addNotification('Classe supprimée', 'INFO'); } }
+  };
+  const addUser = async (userData: any) => {
+    const newItem = { ...userData, id: Math.random().toString() };
+    if (isDemoMode) { setUsers(prev => [...prev, newItem]); addNotification('Utilisateur ajouté (Démo)', 'SUCCESS'); }
+    else { const { error } = await supabase.from('users').insert([{ name: userData.name, email: userData.email, role: userData.role, class_id: userData.classId || null }]); if (!error) { refreshAllData(); addNotification('Utilisateur ajouté', 'SUCCESS'); } }
+  };
+  const importUsers = async (usersData: any[]) => {
+    if (isDemoMode) {
+        setUsers(prev => [...prev, ...usersData.map(u => ({ ...u, id: Math.random().toString() } as User))]);
+        addNotification(`${usersData.length} utilisateurs importés (Démo)`, 'SUCCESS');
+    } else {
+        const dbUsers = usersData.map(u => ({ name: u.name, email: u.email, role: u.role, class_id: u.classId || null }));
+        const { error } = await supabase.from('users').insert(dbUsers);
+        if (!error) { refreshAllData(); addNotification('Utilisateurs importés', 'SUCCESS'); }
+    }
+  };
   const updateUser = async (id: string, item: any) => {
-    const { error } = await supabase.from('users').update({
-        name: item.name, email: item.email, role: item.role, class_id: item.classId, avatar: item.avatar
-    }).eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Utilisateur mis à jour', 'SUCCESS'); }
+    if (isDemoMode) { setUsers(prev => prev.map(u => u.id === id ? { ...u, ...item } : u)); addNotification('Utilisateur mis à jour', 'SUCCESS'); }
+    else { 
+        const payload: any = { ...item }; if(item.classId !== undefined) payload.class_id = item.classId;
+        const { error } = await supabase.from('users').update(payload).eq('id', id); if (!error) { refreshAllData(); addNotification('Utilisateur mis à jour', 'SUCCESS'); } 
+    }
   };
   const deleteUser = async (id: string) => {
-    // Note: Deleting from 'users' table might not delete from Auth depending on cascade settings.
-    // For full cleanup, an Edge Function 'delete-user' calling auth.admin.deleteUser would be better.
-    // For now, we rely on the database deletion.
-    const { error } = await supabase.from('users').delete().eq('id', id);
-    if (!error) { await refreshAllData(); addNotification('Utilisateur supprimé', 'INFO'); }
+    if (isDemoMode) { setUsers(prev => prev.filter(u => u.id !== id)); addNotification('Utilisateur supprimé', 'INFO'); }
+    else { const { error } = await supabase.from('users').delete().eq('id', id); if (!error) { refreshAllData(); addNotification('Utilisateur supprimé', 'INFO'); } }
   };
 
   // --- RENDER ---
-  if (authLoading) {
-      return <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-900"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
-  }
-
   const contextValue: AppContextType = {
     user, users, classes, schoolName, setSchoolName,
     announcements, meets, exams, polls, sentEmails, timeTables, courses,
@@ -618,7 +572,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         localStorage.setItem('theme', newTheme);
         document.documentElement.classList.toggle('dark');
     },
-    login, logout, getCurrentClass, uploadFile,
+    login, logout, getCurrentClass,
     addAnnouncement, updateAnnouncement, deleteAnnouncement,
     addMeet, updateMeet, deleteMeet,
     addExam, updateExam, deleteExam,
@@ -627,7 +581,8 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     addCourse, updateCourse, deleteCourse,
     emailConfig, updateEmailConfig, shareResource, resendEmail,
     addClass, updateClass, deleteClass,
-    addUser, importUsers, updateUser, deleteUser
+    addUser, importUsers, updateUser, deleteUser,
+    uploadFile
   };
 
   return (

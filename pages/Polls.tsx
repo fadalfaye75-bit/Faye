@@ -15,6 +15,8 @@ export const Polls: React.FC = () => {
   const [optionsStr, setOptionsStr] = useState(''); 
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [durationHours, setDurationHours] = useState<number | ''>('');
+  
+  const [showHistory, setShowHistory] = useState(false);
 
   // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -116,6 +118,7 @@ export const Polls: React.FC = () => {
 
   // --- FILTRE : Masquer les sondages expirés (Durée) ---
   const visiblePolls = myPolls.filter(poll => {
+      if (showHistory) return true;
       if (poll.durationHours && poll.durationHours > 0) {
           const expirationDate = addHours(new Date(poll.createdAt), poll.durationHours);
           if (isAfter(new Date(), expirationDate)) {
@@ -137,14 +140,23 @@ export const Polls: React.FC = () => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium text-lg">La voix de la classe compte.</p>
         </div>
-        {canManage && (
-          <button 
-            onClick={openCreate}
-            className="w-full md:w-auto btn-primary text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 active:scale-95 shadow-md"
-          >
-            <Plus className="w-5 h-5"/> <span>Nouveau Sondage</span>
-          </button>
-        )}
+        
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+             <button 
+                onClick={() => setShowHistory(!showHistory)}
+                className={`w-full md:w-auto flex-1 md:flex-none justify-center border px-4 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-sm active:scale-95 ${showHistory ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'}`}
+             >
+                {showHistory ? 'Masquer historique' : 'Voir historique'}
+             </button>
+            {canManage && (
+              <button 
+                onClick={openCreate}
+                className="w-full md:w-auto btn-primary text-white px-6 py-3 rounded-xl font-bold transition flex items-center justify-center gap-2 active:scale-95 shadow-md"
+              >
+                <Plus className="w-5 h-5"/> <span>Nouveau Sondage</span>
+              </button>
+            )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:gap-8">
@@ -152,6 +164,7 @@ export const Polls: React.FC = () => {
           <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
              <Vote className="w-16 h-16 mx-auto mb-4 opacity-10 text-slate-900 dark:text-white" />
              <p className="font-medium text-lg text-slate-500">Aucun sondage actif ou visible.</p>
+             {!showHistory && <p className="text-sm text-slate-400 mt-2 cursor-pointer hover:underline" onClick={() => setShowHistory(true)}>Voir l'historique ?</p>}
           </div>
         )}
         {visiblePolls.map(poll => {

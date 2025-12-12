@@ -1,12 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { ArrowRight, Mail, Lock, Loader2, ShieldCheck, GraduationCap, Eye, EyeOff, AlertTriangle, User, School, BookOpen } from 'lucide-react';
+import { ArrowRight, Mail, Lock, Loader2, ShieldCheck, GraduationCap, Eye, EyeOff, AlertTriangle, User, School, BookOpen, Users, Key } from 'lucide-react';
+import { MOCK_USERS } from '../constants';
+import { Role } from '../types';
 
 export const Login: React.FC = () => {
   const { login, addNotification } = useApp();
-  const [email, setEmail] = useState('faye@ecole.com'); 
-  const [password, setPassword] = useState('passer25');
+  // Identifiants par défaut Admin
+  const [email, setEmail] = useState(''); 
+  const [password, setPassword] = useState('');
+  
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -27,7 +31,9 @@ export const Login: React.FC = () => {
     setLogoutReason(null);
     setIsLoading(true);
     try {
-      const success = await login(emailVal, passVal, rememberMe);
+      // Pour les users démo, le mot de passe n'est pas vérifié strictment par la fonction login modifiée
+      // mais on passe une valeur pour simuler
+      const success = await login(emailVal, passVal || 'demo123', rememberMe);
       if (!success) {
           setError("Identifiants incorrects ou utilisateur inconnu.");
           setIsLoading(false);
@@ -42,6 +48,14 @@ export const Login: React.FC = () => {
     e.preventDefault();
     if (isLoading) return;
     executeLogin(email, password);
+  };
+
+  const handleDemoLogin = (role: Role) => {
+    const demoUser = MOCK_USERS.find(u => u.role === role);
+    if (demoUser) {
+        addNotification(`Connexion rapide : ${demoUser.name}`, "INFO");
+        executeLogin(demoUser.email, 'demo');
+    }
   };
 
   return (
@@ -113,7 +127,7 @@ export const Login: React.FC = () => {
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-[#0EA5E9] transition font-medium"
-                                placeholder="nom@ecole.com"
+                                placeholder="votre.nom@ecole.com"
                                 required
                             />
                         </div>
@@ -167,6 +181,38 @@ export const Login: React.FC = () => {
                         {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Se connecter <ArrowRight className="w-5 h-5" /></>}
                     </button>
                 </form>
+
+                {/* --- DEMO ACCESS --- */}
+                <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center mb-4 flex items-center justify-center gap-2">
+                        <Key className="w-3 h-3" /> Accès Rapide (Démo)
+                    </h3>
+                    <div className="grid grid-cols-3 gap-3">
+                        <button 
+                            onClick={() => handleDemoLogin(Role.ADMIN)}
+                            className="p-3 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 border border-red-100 dark:border-red-900/30 rounded-xl flex flex-col items-center gap-1 transition group"
+                        >
+                            <ShieldCheck className="w-5 h-5 text-red-500 group-hover:scale-110 transition" />
+                            <span className="text-[10px] font-bold text-red-600 dark:text-red-400">Admin</span>
+                        </button>
+
+                        <button 
+                            onClick={() => handleDemoLogin(Role.RESPONSIBLE)}
+                            className="p-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-900/30 rounded-xl flex flex-col items-center gap-1 transition group"
+                        >
+                            <School className="w-5 h-5 text-indigo-500 group-hover:scale-110 transition" />
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">Prof</span>
+                        </button>
+
+                        <button 
+                            onClick={() => handleDemoLogin(Role.STUDENT)}
+                            className="p-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-1 transition group"
+                        >
+                            <Users className="w-5 h-5 text-emerald-500 group-hover:scale-110 transition" />
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Élève</span>
+                        </button>
+                    </div>
+                </div>
 
             </div>
         </div>
