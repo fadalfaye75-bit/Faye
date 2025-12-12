@@ -5,7 +5,7 @@ import { ArrowRight, Mail, Lock, Loader2, ShieldCheck, GraduationCap, Eye, EyeOf
 
 export const Login: React.FC = () => {
   const { login, addNotification } = useApp();
-  const [email, setEmail] = useState(''); 
+  const [email, setEmail] = useState('faye@ecole.com'); 
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -80,7 +80,7 @@ export const Login: React.FC = () => {
                </div>
             </div>
 
-            <p className="text-xs text-sky-200/60 mt-8 relative z-10">© 2025 SunuClasse Education. All rights reserved.</p>
+            <p className="text-xs text-sky-200/60 mt-8 relative z-10">© 2025 Serigne Fallou Faye. All rights reserved.</p>
         </div>
 
         {/* RIGHT SIDE: LOGIN FORM */}

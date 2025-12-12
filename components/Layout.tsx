@@ -244,7 +244,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
             <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[#0EA5E9]">
               {logoError ? <School className="w-5 h-5 text-[#87CEEB]" /> : <img src={LOGO_UCAD} className="w-full h-full object-contain" onError={() => setLogoError(true)} />}
             </div>
-            <span className="font-bold text-lg text-slate-800 dark:text-white tracking-tight">Class Connect</span>
+            <span className="font-bold text-lg text-slate-800 dark:text-white tracking-tight">Class Connect+</span>
          </div>
 
          {/* Right: Notifications */}
@@ -271,7 +271,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
                    {logoError ? <School className="w-7 h-7 text-[#87CEEB]" /> : <img src={LOGO_UCAD} className="w-full h-full object-contain" onError={() => setLogoError(true)} />}
                 </div>
                 <div>
-                   <h1 className="font-extrabold text-lg text-slate-800 dark:text-white leading-none tracking-tight">Class Connect</h1>
+                   <h1 className="font-extrabold text-lg text-slate-800 dark:text-white leading-none tracking-tight">Class Connect+</h1>
                    <p className="text-xs text-[#87CEEB] font-bold mt-1.5 uppercase tracking-wider flex items-center gap-1">
                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></span>
                      En Ligne
@@ -484,7 +484,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
             <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
                <div className="flex items-center gap-3">
                   <School className="w-5 h-5 text-[#87CEEB]" />
-                  <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Class Connect © 2025</span>
+                  <span className="text-sm font-bold text-slate-600 dark:text-slate-400">Class Connect+ © 2025 Serigne Fallou Faye</span>
                </div>
                
                <div className="flex items-center gap-4">
