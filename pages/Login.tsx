@@ -6,7 +6,7 @@ import { ArrowRight, Mail, Lock, Loader2, ShieldCheck, GraduationCap, Eye, EyeOf
 export const Login: React.FC = () => {
   const { login, addNotification } = useApp();
   const [email, setEmail] = useState('faye@ecole.com'); 
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('passer25');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
