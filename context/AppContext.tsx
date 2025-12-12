@@ -204,8 +204,13 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         .eq('email', email)
         .single();
 
-      if (error || !dbUser) {
-          console.error("User not found or DB error", error);
+      if (error) {
+          console.error("Login DB Error:", error.message || JSON.stringify(error));
+          return false;
+      }
+
+      if (!dbUser) {
+          console.warn(`Tentative de connexion échouée pour l'email: ${email}`);
           return false;
       }
 
@@ -241,7 +246,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       refreshAllData(); 
       return true;
     } catch (e) {
-      console.error(e);
+      console.error("Exception login:", e);
       return false;
     }
   };
@@ -304,26 +309,47 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       author_id: user?.id,
       class_id: user?.classId
     }]);
-    if (!error) { refreshAllData(); addNotification('Annonce publiée', 'SUCCESS'); }
-    else { addNotification('Erreur lors de la publication', 'ERROR'); }
+    if (!error) { 
+      await refreshAllData(); 
+      addNotification('Annonce publiée', 'SUCCESS'); 
+    } else { 
+      console.error('Add Announcement Error:', error);
+      addNotification(`Erreur lors de la publication: ${error.message}`, 'ERROR'); 
+    }
   };
 
   const updateAnnouncement = async (id: string, item: any) => {
     const payload: any = {};
-    if (item.title) payload.title = item.title;
-    if (item.content) payload.content = item.content;
-    if (item.urgency) payload.urgency = item.urgency;
+    if (item.title !== undefined) payload.title = item.title;
+    if (item.content !== undefined) payload.content = item.content;
+    if (item.urgency !== undefined) payload.urgency = item.urgency;
     if (item.durationHours !== undefined) payload.duration_hours = item.durationHours;
     if (item.link !== undefined) payload.link = item.link;
-    if (item.attachments) payload.attachments = item.attachments;
+    if (item.attachments !== undefined) payload.attachments = item.attachments;
 
     const { error } = await supabase.from('announcements').update(payload).eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Annonce mise à jour', 'SUCCESS'); }
+    if (!error) { 
+        await refreshAllData(); 
+        addNotification('Annonce mise à jour', 'SUCCESS'); 
+    } else {
+        console.error('Update Announcement Error:', error);
+        addNotification(`Erreur mise à jour: ${error.message}`, 'ERROR');
+    }
   };
 
   const deleteAnnouncement = async (id: string) => {
+    // Suppression locale immédiate (Optimistic UI)
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+    
     const { error } = await supabase.from('announcements').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Annonce supprimée', 'INFO'); }
+    if (!error) { 
+        await refreshAllData(); 
+        addNotification('Annonce supprimée', 'INFO'); 
+    } else {
+        // En cas d'erreur, on rafraîchit pour remettre l'élément
+        await refreshAllData();
+        addNotification(`Erreur lors de la suppression: ${error.message}`, "ERROR");
+    }
   };
 
   const addMeet = async (item: any) => {
@@ -335,7 +361,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       class_id: user?.classId,
       author_id: user?.id
     }]);
-    if (!error) { refreshAllData(); addNotification('Meet programmé', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Meet programmé', 'SUCCESS'); }
   };
 
   const updateMeet = async (id: string, item: any) => {
@@ -345,12 +371,12 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (item.date) payload.date = item.date;
     if (item.teacherName) payload.teacher_name = item.teacherName;
     const { error } = await supabase.from('meets').update(payload).eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Meet mis à jour', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Meet mis à jour', 'SUCCESS'); }
   };
 
   const deleteMeet = async (id: string) => {
     const { error } = await supabase.from('meets').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Meet supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Meet supprimé', 'INFO'); }
   };
 
   const addExam = async (item: any) => {
@@ -363,7 +389,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       author_id: user?.id,
       class_id: user?.classId
     }]);
-    if (!error) { refreshAllData(); addNotification('Examen ajouté', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Examen ajouté', 'SUCCESS'); }
   };
 
   const updateExam = async (id: string, item: any) => {
@@ -374,12 +400,12 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (item.room) payload.room = item.room;
     if (item.notes !== undefined) payload.notes = item.notes;
     const { error } = await supabase.from('exams').update(payload).eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Examen mis à jour', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Examen mis à jour', 'SUCCESS'); }
   };
 
   const deleteExam = async (id: string) => {
     const { error } = await supabase.from('exams').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Examen supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Examen supprimé', 'INFO'); }
   };
 
   const addPoll = async (item: any) => {
@@ -393,15 +419,19 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       class_id: user?.classId,
       author_id: user?.id
     }]);
-    if (!error) { refreshAllData(); addNotification('Sondage créé', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Sondage créé', 'SUCCESS'); }
   };
 
   const updatePoll = async (id: string, item: any) => {
     const payload: any = {};
     if (item.active !== undefined) payload.active = item.active;
     if (item.options) payload.options = item.options;
+    if (item.question) payload.question = item.question;
+    if (item.isAnonymous !== undefined) payload.is_anonymous = item.isAnonymous;
+    if (item.durationHours !== undefined) payload.duration_hours = item.durationHours;
+
     const { error } = await supabase.from('polls').update(payload).eq('id', id);
-    if (!error) refreshAllData();
+    if (!error) await refreshAllData();
   };
 
   const votePoll = async (pollId: string, optionId: string) => {
@@ -420,12 +450,12 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     );
 
     const { error } = await supabase.from('polls').update({ options: updatedOptions }).eq('id', pollId);
-    if (!error) { refreshAllData(); addNotification('Vote enregistré', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Vote enregistré', 'SUCCESS'); }
   };
 
   const deletePoll = async (id: string) => {
     const { error } = await supabase.from('polls').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Sondage supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Sondage supprimé', 'INFO'); }
   };
 
   const addTimeTable = async (item: any) => {
@@ -436,18 +466,20 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       class_id: user?.classId,
       author_id: user?.id
     }]);
-    if (!error) { refreshAllData(); addNotification('Emploi du temps ajouté', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Emploi du temps ajouté', 'SUCCESS'); }
     else { addNotification("Erreur d'envoi (fichier trop volumineux ?)", 'ERROR'); }
   };
 
   const deleteTimeTable = async (id: string) => {
     const { error } = await supabase.from('time_tables').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Fichier supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Fichier supprimé', 'INFO'); }
   };
 
   const addCourse = async (item: any) => {
     if (!user) return;
-    const { error } = await supabase.from('courses').insert([{
+    
+    // Payload explicitly defined
+    const payload = {
       subject: item.subject,
       teacher: item.teacher,
       room: item.room,
@@ -455,14 +487,61 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       start_time: item.startTime,
       end_time: item.endTime,
       color: item.color,
-      class_id: user.classId || null
-    }]);
-    if (!error) { refreshAllData(); addNotification('Cours ajouté', 'SUCCESS'); }
+      class_id: user.classId || null // Ensure null is sent if undefined
+    };
+
+    const { error } = await supabase.from('courses').insert([payload]);
+    
+    if (!error) { 
+        await refreshAllData(); 
+        addNotification('Cours ajouté au planning', 'SUCCESS'); 
+    } else {
+        console.error("Erreur ajout cours:", error);
+        
+        let errorMsg = "Erreur inconnue";
+        if (typeof error === 'string') {
+            errorMsg = error;
+        } else if (error && typeof error === 'object') {
+            if ('message' in error && typeof (error as any).message === 'string') {
+                errorMsg = (error as any).message;
+            } else if ('hint' in error && typeof (error as any).hint === 'string') {
+                 errorMsg = (error as any).hint;
+            } else {
+                 try {
+                     errorMsg = JSON.stringify(error);
+                 } catch {
+                     errorMsg = "Erreur (détails non affichables)";
+                 }
+            }
+        }
+        
+        addNotification(`Erreur lors de l'ajout: ${errorMsg}`, 'ERROR');
+    }
+  };
+
+  const updateCourse = async (id: string, item: any) => {
+    const payload: any = {};
+    if (item.subject) payload.subject = item.subject;
+    if (item.teacher) payload.teacher = item.teacher;
+    if (item.room) payload.room = item.room;
+    if (item.dayOfWeek) payload.day_of_week = item.dayOfWeek;
+    if (item.startTime) payload.start_time = item.startTime;
+    if (item.endTime) payload.end_time = item.endTime;
+    if (item.color) payload.color = item.color;
+
+    const { error } = await supabase.from('courses').update(payload).eq('id', id);
+    if (!error) { 
+        await refreshAllData(); 
+        addNotification('Cours mis à jour', 'SUCCESS'); 
+    } else {
+        console.error("Erreur update cours:", error);
+        addNotification(`Erreur mise à jour: ${error.message}`, 'ERROR');
+    }
   };
 
   const deleteCourse = async (id: string) => {
     const { error } = await supabase.from('courses').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Cours supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Cours supprimé', 'INFO'); }
   };
 
   const shareResource = async (type: string, item: any) => {
@@ -476,26 +555,26 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   // ADMIN
   const addClass = async (name: string, description: string, email: string) => {
     const { error } = await supabase.from('classes').insert([{ name, description, email }]);
-    if (!error) { refreshAllData(); addNotification('Classe créée', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Classe créée', 'SUCCESS'); }
   };
   const updateClass = async (id: string, item: any) => {
     const { error } = await supabase.from('classes').update(item).eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Classe mise à jour', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Classe mise à jour', 'SUCCESS'); }
   };
   const deleteClass = async (id: string) => {
     const { error } = await supabase.from('classes').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Classe supprimée', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Classe supprimée', 'INFO'); }
   };
   const addUser = async (userData: any) => {
     const { error } = await supabase.from('users').insert([{
       name: userData.name, email: userData.email, role: userData.role, class_id: userData.classId
     }]);
-    if (!error) { refreshAllData(); addNotification('Utilisateur ajouté', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Utilisateur ajouté', 'SUCCESS'); }
   };
   const importUsers = async (usersData: any[]) => {
     const dbUsers = usersData.map(u => ({ name: u.name, email: u.email, role: u.role, class_id: u.classId }));
     const { error } = await supabase.from('users').insert(dbUsers);
-    if (!error) { refreshAllData(); addNotification('Utilisateurs importés', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Utilisateurs importés', 'SUCCESS'); }
   };
   const updateUser = async (id: string, item: any) => {
     const payload: any = {};
@@ -505,11 +584,11 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (item.classId !== undefined) payload.class_id = item.classId || null;
     if (item.avatar) payload.avatar = item.avatar;
     const { error } = await supabase.from('users').update(payload).eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Utilisateur mis à jour', 'SUCCESS'); }
+    if (!error) { await refreshAllData(); addNotification('Utilisateur mis à jour', 'SUCCESS'); }
   };
   const deleteUser = async (id: string) => {
     const { error } = await supabase.from('users').delete().eq('id', id);
-    if (!error) { refreshAllData(); addNotification('Utilisateur supprimé', 'INFO'); }
+    if (!error) { await refreshAllData(); addNotification('Utilisateur supprimé', 'INFO'); }
   };
 
   // --- RENDER ---
@@ -532,7 +611,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     addExam, updateExam, deleteExam,
     addPoll, updatePoll, votePoll, deletePoll,
     addTimeTable, deleteTimeTable,
-    addCourse, deleteCourse,
+    addCourse, updateCourse, deleteCourse,
     emailConfig, updateEmailConfig, shareResource, resendEmail,
     addClass, updateClass, deleteClass,
     addUser, importUsers, updateUser, deleteUser

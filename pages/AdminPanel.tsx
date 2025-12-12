@@ -244,6 +244,12 @@ export const AdminPanel: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Check Size (Max 3MB)
+    if (file.size > 3 * 1024 * 1024) {
+      addNotification("Le fichier dépasse la limite de 3 Mo.", "ERROR");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (e) => {
       const text = e.target?.result as string;

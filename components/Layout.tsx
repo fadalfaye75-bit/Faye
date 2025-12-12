@@ -110,6 +110,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && user) {
+      if (file.size > 3 * 1024 * 1024) {
+        addNotification("L'image dépasse la limite de 3 Mo.", "ERROR");
+        return;
+      }
+      
       const reader = new FileReader();
       reader.onloadend = () => {
         updateUser(user.id, { avatar: reader.result as string });

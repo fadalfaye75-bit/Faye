@@ -167,6 +167,14 @@ export const Infos: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      
+      // Limitation Taille : 3 Mo
+      const MAX_SIZE = 3 * 1024 * 1024; // 3 MB in bytes
+      if (file.size > MAX_SIZE) {
+        addNotification('Le fichier dépasse la limite de 3 Mo.', 'ERROR');
+        return;
+      }
+
       const reader = new FileReader();
       
       const isImage = file.type.startsWith('image/');
@@ -200,8 +208,9 @@ export const Infos: React.FC = () => {
       title, 
       content, 
       urgency,
-      durationHours: durationHours === '' ? undefined : Number(durationHours),
-      link: link || undefined,
+      // IMPORTANT: Envoi de 'null' si vide pour permettre la suppression en base de données
+      durationHours: durationHours === '' ? null : Number(durationHours),
+      link: link || null, 
       attachments
     };
 
@@ -223,10 +232,14 @@ export const Infos: React.FC = () => {
     }
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId) {
-      deleteAnnouncement(deleteId);
+      await deleteAnnouncement(deleteId);
       setDeleteId(null);
+      // Si on était en train de visualiser cet élément, on ferme la modale
+      if (viewingItem?.id === deleteId) {
+        setViewingItem(null);
+      }
     }
   };
 
@@ -627,16 +640,32 @@ export const Infos: React.FC = () => {
                     </div>
                  )}
 
-                 {/* GALERIE IMAGES */}
+                 {/* GALERIE IMAGES AVEC BOUTON DE TELECHARGEMENT */}
                  {viewingItem.attachments?.some(a => a.type === 'IMAGE') && (
                     <div className="mb-8">
                        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> Photos</h4>
                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                           {viewingItem.attachments.filter(a => a.type === 'IMAGE').map(img => (
-                             <div key={img.id} className="relative group cursor-pointer aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100" onClick={() => window.open(img.url, '_blank')}>
-                                <img src={img.url} alt={img.name} className="w-full h-full object-cover transition duration-500 group-hover:scale-110" />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
-                                   <Eye className="w-8 h-8 text-white drop-shadow-md" />
+                             <div key={img.id} className="relative group aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100">
+                                <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
+                                
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                                   <button 
+                                      onClick={() => window.open(img.url, '_blank')} 
+                                      className="p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition"
+                                      title="Voir en plein écran"
+                                   >
+                                      <Eye className="w-6 h-6" />
+                                   </button>
+                                   <a 
+                                      href={img.url} 
+                                      download={img.name} 
+                                      className="p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition"
+                                      title="Télécharger"
+                                      onClick={(e) => e.stopPropagation()}
+                                   >
+                                      <Download className="w-6 h-6" />
+                                   </a>
                                 </div>
                              </div>
                           ))}
@@ -720,7 +749,7 @@ export const Infos: React.FC = () => {
 
                  {/* File Uploads */}
                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Pièces Jointes (PDF / Photos)</label>
+                    <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Pièces Jointes (PDF / Photos) - Max 3 Mo</label>
                     <div className="flex flex-wrap gap-2 mb-3">
                        {attachments.map(att => (
                           <div key={att.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700">
@@ -739,7 +768,7 @@ export const Infos: React.FC = () => {
                  {/* Urgency & Duration */}
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Niveau d'urgence</label>
+                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Niveau d'urgence</label>
                         <div className="flex gap-2">
                         {[Urgency.INFO, Urgency.NORMAL, Urgency.URGENT].map(u => {
                             const style = URGENCY_CONFIG[u];
@@ -754,7 +783,7 @@ export const Infos: React.FC = () => {
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Durée (Heures)</label>
+                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Durée (Heures)</label>
                         <div className="relative">
                             <Timer className="absolute left-4 top-4 w-5 h-5 text-slate-400" />
                             <input type="number" min="1" value={durationHours} onChange={e => setDurationHours(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 pl-12 text-base font-bold focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition text-slate-800 dark:text-white placeholder-slate-400" placeholder="Illimité" />

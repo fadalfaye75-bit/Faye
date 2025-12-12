@@ -1,5 +1,4 @@
 
-
 export enum Role {
   ADMIN = 'ADMIN',            // Super Admin (Gère tout)
   RESPONSIBLE = 'RESPONSIBLE', // Responsable de classe (Gère sa classe)
@@ -183,7 +182,7 @@ export interface AppContextType {
   exams: Exam[];
   polls: Poll[];
   timeTables: TimeTable[];
-  courses: Course[]; // NOUVEAU
+  courses: Course[];
   sentEmails: SentEmail[];
   
   // Security & UX
@@ -238,6 +237,7 @@ export interface AppContextType {
 
   // Cours (Calendrier Interactif)
   addCourse: (item: Omit<Course, 'id' | 'classId'>) => Promise<void>;
+  updateCourse: (id: string, item: Partial<Course>) => Promise<void>;
   deleteCourse: (id: string) => Promise<void>;
 
   // Sharing & Config
