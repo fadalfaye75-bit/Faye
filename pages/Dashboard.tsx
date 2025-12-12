@@ -22,10 +22,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const myAnnouncements = isAdmin ? announcements : announcements.filter(a => a.classId === user?.classId);
   const myPolls = isAdmin ? polls : polls.filter(p => p.classId === user?.classId);
 
+  // Filter users relevant to the dashboard stats (Classmates for Students/Responsible, Everyone for Admin)
+  const relevantUsers = useMemo(() => {
+    if (isAdmin) return users;
+    return users.filter(u => u.classId === user?.classId);
+  }, [users, isAdmin, user?.classId]);
+
   const today = new Date();
+  const startOfToday = new Date(today.setHours(0,0,0,0));
   
   const nextExams = myExams
-    .filter(e => new Date(e.date) >= new Date(today.setHours(0,0,0,0)))
+    .filter(e => new Date(e.date) >= startOfToday)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 3);
 
@@ -38,30 +45,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const totalPolls = myPolls.length;
   
   // --- REAL DATA CALCULATION ---
-  // Calcul du taux de participation réel
+  // Calcul du taux de participation réel basé sur les utilisateurs pertinents (de la classe)
   const participationStats = useMemo(() => {
-    if (totalPolls === 0 || users.length === 0) return { rate: 0, voted: 0, total: 0 };
+    if (totalPolls === 0 || relevantUsers.length === 0) return { rate: 0, voted: 0, total: 0 };
 
     // Total des votes effectués dans tous les sondages visibles
     const totalVotesCast = myPolls.reduce((acc, poll) => {
         return acc + poll.options.reduce((sum, opt) => sum + opt.voterIds.length, 0);
     }, 0);
 
-    // Estimation du nombre total de votes possibles (Nb Sondages * Nb Utilisateurs)
-    // Note: C'est une estimation car certains sondages pourraient cibler une classe spécifique, 
-    // mais pour le dashboard global, cela donne une bonne tendance.
-    const totalPossibleVotes = totalPolls * users.length;
+    // Estimation du nombre total de votes possibles (Nb Sondages * Nb Utilisateurs Pertinents)
+    const totalPossibleVotes = totalPolls * relevantUsers.length;
 
-    const rate = Math.round((totalVotesCast / totalPossibleVotes) * 100) || 0;
+    const rate = totalPossibleVotes > 0 ? Math.round((totalVotesCast / totalPossibleVotes) * 100) : 0;
     
     return { rate, voted: rate, total: 100 };
-  }, [myPolls, users, totalPolls]);
+  }, [myPolls, relevantUsers, totalPolls]);
 
   const participationRate = participationStats.rate;
   
   const pieData = [
     { name: 'Votants', value: participationRate },
-    { name: 'Abstention', value: 100 - participationRate },
+    { name: 'Abstention', value: Math.max(0, 100 - participationRate) },
   ];
   // Class Connect Palette: Sky Blue (#87CEEB) & Turquoise (#2DD4BF)
   const PIE_COLORS = ['#87CEEB', '#2DD4BF'];
