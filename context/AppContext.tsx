@@ -523,41 +523,66 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   };
   
   const addUser = async (userData: Omit<User, 'id'>) => {
-    // Note: This only creates the profile in the public 'users' table. 
-    // The actual Supabase Auth user must be created via the Dashboard or an Edge Function to allow login.
-    const { error } = await supabase.from('users').insert([{
-        name: userData.name,
-        email: userData.email,
-        role: userData.role,
-        class_id: userData.classId || null,
-        avatar: userData.avatar
-    }]);
+    // Generate a temporary password for the new user
+    const tempPassword = "SunuClasse" + Math.floor(Math.random() * 10000);
+    
+    addNotification(`Création du compte...`, 'INFO');
+
+    // Call Edge Function to create Auth User + Public Profile
+    const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+            email: userData.email,
+            password: tempPassword,
+            name: userData.name,
+            role: userData.role,
+            class_id: userData.classId
+        }
+    });
     
     if (!error) { 
         await refreshAllData(); 
-        addNotification('Profil utilisateur ajouté', 'SUCCESS'); 
+        // Display password to Admin one time
+        addNotification(`Utilisateur créé ! MDP Temporaire : ${tempPassword}`, 'SUCCESS'); 
     } else {
         console.error("Erreur ajout user:", error);
-        addNotification(`Erreur: ${error.message}`, 'ERROR');
+        addNotification(`Erreur: ${error.message || 'Echec création compte'}`, 'ERROR');
     }
   };
   
   const importUsers = async (usersData: Omit<User, 'id'>[]) => {
-     // Maps to DB column names (snake_case)
-     const dbData = usersData.map(u => ({
-         name: u.name,
-         email: u.email,
-         role: u.role,
-         class_id: u.classId || null
-     }));
+     addNotification(`Import de ${usersData.length} utilisateurs en cours...`, 'INFO');
+     let successCount = 0;
+     let errorCount = 0;
 
-     const { error } = await supabase.from('users').insert(dbData);
-     if (!error) { 
-         await refreshAllData(); 
-         addNotification(`${usersData.length} utilisateurs importés`, 'SUCCESS'); 
+     // Process imports sequentially to avoid rate limits or use a bulk endpoint if available
+     for (const u of usersData) {
+         const tempPassword = "SunuClasse" + Math.floor(Math.random() * 10000);
+         const { error } = await supabase.functions.invoke('create-user', {
+            body: {
+                email: u.email,
+                password: tempPassword,
+                name: u.name,
+                role: u.role,
+                class_id: u.classId
+            }
+         });
+         
+         if (!error) successCount++;
+         else {
+             console.error(`Failed to import ${u.email}:`, error);
+             errorCount++;
+         }
+     }
+
+     await refreshAllData(); 
+     
+     if (errorCount === 0) {
+        addNotification(`${successCount} utilisateurs importés avec succès.`, 'SUCCESS');
+        // Note: For imports, we can't easily show all passwords. 
+        // Best practice would be to send welcome emails or set a standard default password.
+        addNotification(`Mot de passe par défaut généré (ex: SunuClasse...)`, 'INFO');
      } else {
-         console.error("Erreur import:", error);
-         addNotification(`Erreur lors de l'import: ${error.message}`, 'ERROR');
+        addNotification(`${successCount} réussis, ${errorCount} échecs`, 'WARNING');
      }
   };
   
@@ -568,6 +593,9 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!error) { await refreshAllData(); addNotification('Utilisateur mis à jour', 'SUCCESS'); }
   };
   const deleteUser = async (id: string) => {
+    // Note: Deleting from 'users' table might not delete from Auth depending on cascade settings.
+    // For full cleanup, an Edge Function 'delete-user' calling auth.admin.deleteUser would be better.
+    // For now, we rely on the database deletion.
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (!error) { await refreshAllData(); addNotification('Utilisateur supprimé', 'INFO'); }
   };
