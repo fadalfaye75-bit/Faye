@@ -32,7 +32,8 @@ import {
   Check,
   Sun,
   Moon,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock
 } from 'lucide-react';
 import { Role, Notification } from '../types';
 import { formatDistanceToNow } from 'date-fns';
@@ -67,7 +68,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
     setHighlightedItemId,
     addNotification,
     theme,
-    toggleTheme
+    toggleTheme,
+    reminderSettings,
+    updateReminderSettings
   } = useApp();
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -80,6 +83,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPasswordChange, setShowPasswordChange] = useState(false);
+
+  // Reminder Settings State (Local)
+  const [showReminders, setShowReminders] = useState(false);
+  const [localReminders, setLocalReminders] = useState(reminderSettings);
 
   // Navigation Items (Desktop Sidebar)
   const navItems = [
@@ -136,6 +143,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
     setShowPasswordChange(false);
   };
 
+  const handleSaveReminders = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateReminderSettings(localReminders);
+    setShowReminders(false);
+  };
+
   const handleNotificationClick = (notif: Notification) => {
     markNotificationAsRead(notif.id);
     if (notif.targetPage) {
@@ -149,12 +162,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
 
   useEffect(() => {
     if (!isProfileModalOpen) {
-      // Reset form when modal closes
+      // Reset forms when modal closes
       setShowPasswordChange(false);
       setNewPassword('');
       setConfirmPassword('');
+      setShowReminders(false);
+    } else {
+      // Sync local reminders with global state when opening
+      setLocalReminders(reminderSettings);
     }
-  }, [isProfileModalOpen]);
+  }, [isProfileModalOpen, reminderSettings]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col md:flex-row font-sans text-slate-700 dark:text-slate-200 transition-colors duration-500">
@@ -493,7 +510,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
                    {user?.role}
                  </div>
               </div>
-              <div className="p-6 bg-slate-50 dark:bg-slate-950 space-y-6">
+              <div className="p-6 bg-slate-50 dark:bg-slate-950 space-y-4">
                  {/* Avatar Selection */}
                  <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">Choisir un avatar</p>
@@ -504,6 +521,80 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
                           </button>
                         ))}
                     </div>
+                 </div>
+
+                 <div className="border-t border-slate-200 dark:border-slate-800 my-2"></div>
+                 
+                 {/* REMINDER SETTINGS */}
+                 <div>
+                    <button 
+                      onClick={() => setShowReminders(!showReminders)}
+                      className="w-full flex items-center justify-between text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white"
+                    >
+                      <span className="flex items-center gap-2"><Bell className="w-4 h-4"/> Préférences Notifications</span>
+                      <ChevronRight className={`w-4 h-4 transition ${showReminders ? 'rotate-90' : ''}`} />
+                    </button>
+
+                    {showReminders && (
+                      <form onSubmit={handleSaveReminders} className="mt-4 space-y-4 animate-in slide-in-from-top-2 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-500 uppercase">Activer les rappels</span>
+                              <button 
+                                  type="button"
+                                  onClick={() => setLocalReminders({...localReminders, enabled: !localReminders.enabled})}
+                                  className={`w-10 h-5 rounded-full p-0.5 transition duration-300 ease-in-out ${localReminders.enabled ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+                              >
+                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition duration-300 ${localReminders.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                              </button>
+                          </div>
+
+                          <div className={`space-y-3 transition-opacity ${localReminders.enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block flex items-center gap-1"><FileSpreadsheet className="w-3 h-3"/> Cours (Avant)</label>
+                                  <select 
+                                      value={localReminders.courseDelay} 
+                                      onChange={e => setLocalReminders({...localReminders, courseDelay: Number(e.target.value)})}
+                                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-xs font-bold p-2 text-slate-700 dark:text-slate-300"
+                                  >
+                                      <option value={5}>5 min</option>
+                                      <option value={10}>10 min</option>
+                                      <option value={15}>15 min</option>
+                                      <option value={30}>30 min</option>
+                                      <option value={60}>1 heure</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block flex items-center gap-1"><CalendarDays className="w-3 h-3"/> Examens (Avant)</label>
+                                  <select 
+                                      value={localReminders.examDelay} 
+                                      onChange={e => setLocalReminders({...localReminders, examDelay: Number(e.target.value)})}
+                                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-xs font-bold p-2 text-slate-700 dark:text-slate-300"
+                                  >
+                                      <option value={60}>1 heure</option>
+                                      <option value={120}>2 heures</option>
+                                      <option value={1440}>24 heures</option>
+                                      <option value={2880}>48 heures</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block flex items-center gap-1"><Video className="w-3 h-3"/> Visio (Avant)</label>
+                                  <select 
+                                      value={localReminders.meetDelay} 
+                                      onChange={e => setLocalReminders({...localReminders, meetDelay: Number(e.target.value)})}
+                                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-xs font-bold p-2 text-slate-700 dark:text-slate-300"
+                                  >
+                                      <option value={5}>5 min</option>
+                                      <option value={15}>15 min</option>
+                                      <option value={30}>30 min</option>
+                                  </select>
+                              </div>
+                          </div>
+                          
+                          <button type="submit" className="w-full bg-slate-800 dark:bg-slate-700 text-white py-2 rounded-lg text-xs font-bold hover:bg-slate-700 dark:hover:bg-slate-600 transition">
+                              Enregistrer
+                          </button>
+                      </form>
+                    )}
                  </div>
 
                  <div className="border-t border-slate-200 dark:border-slate-800 my-2"></div>

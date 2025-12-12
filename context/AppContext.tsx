@@ -1,11 +1,10 @@
 
-
 import React, { createContext, useContext, useState, PropsWithChildren, useMemo, useEffect, useCallback, useRef } from 'react';
 import { User, Announcement, Exam, Poll, Role, MeetSession, ClassGroup, AuditLog, Notification, PollOption, SentEmail, EmailConfig, AppContextType, TimeTable, Course, ReminderSettings } from '../types';
 import { supabase } from '../services/supabaseClient';
 import { format, differenceInMinutes, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { INITIAL_CLASSES, INITIAL_USERS, INITIAL_ANNOUNCEMENTS, INITIAL_MEETS, INITIAL_EXAMS, INITIAL_POLLS } from '../constants';
+import { INITIAL_CLASSES, INITIAL_USERS } from '../constants';
 import { sendEmail } from '../services/emailService';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -22,16 +21,19 @@ const DEFAULT_REMINDERS: ReminderSettings = {
 };
 
 export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
-  // State Initialization with Constants Fallback
+  
+  // --- STATE ---
   const [user, setUser] = useState<User | null>(null);
+  
+  // Data State (Initialisé vide, rempli par Supabase)
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [classes, setClasses] = useState<ClassGroup[]>(INITIAL_CLASSES);
-  const [announcements, setAnnouncements] = useState<Announcement[]>(INITIAL_ANNOUNCEMENTS);
-  const [meets, setMeets] = useState<MeetSession[]>(INITIAL_MEETS);
-  const [exams, setExams] = useState<Exam[]>(INITIAL_EXAMS);
-  const [polls, setPolls] = useState<Poll[]>(INITIAL_POLLS);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [meets, setMeets] = useState<MeetSession[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [polls, setPolls] = useState<Poll[]>([]);
   const [timeTables, setTimeTables] = useState<TimeTable[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]); // NOUVEAU: Liste des cours hebdo
+  const [courses, setCourses] = useState<Course[]>([]);
 
   // Defaulting to "Class Connect"
   const [schoolName, setSchoolNameState] = useState('Class Connect');
@@ -64,9 +66,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   // --- Helpers ---
   const getCurrentClass = () => classes.find(c => c.id === user?.classId);
 
-  // --- PERSISTENCE & THEME & ACTIVITY MONITORING ---
-  
-  // 1. Initialize Theme & Session & Local Data from Storage
+  // --- INITIAL LOAD (Theme & Local Settings Only) ---
   useEffect(() => {
     // Theme
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -92,15 +92,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       }
     }
 
-    // Local Persistence for Courses (Simulation DB)
-    const storedCourses = localStorage.getItem('sunuclasse_courses');
-    if (storedCourses) {
-        try {
-            setCourses(JSON.parse(storedCourses));
-        } catch (e) {}
-    }
-
-    // Load Reminder Settings
+    // Load Reminder Settings (Local Preference)
     const storedReminders = localStorage.getItem('sunuclasse_reminders');
     if (storedReminders) {
       try {
@@ -108,11 +100,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       } catch (e) {}
     }
   }, []);
-
-  // Persist Courses whenever they change
-  useEffect(() => {
-      localStorage.setItem('sunuclasse_courses', JSON.stringify(courses));
-  }, [courses]);
 
   // Persist Reminders
   const updateReminderSettings = (settings: ReminderSettings) => {
@@ -285,27 +272,10 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     } catch (e) { console.error("Log error", e); }
   };
 
-  // --- Fetch Data ---
+  // --- Fetch Data from SUPABASE ---
   const refreshAllData = async () => {
     try {
-      const { data: classesData } = await supabase.from('classes').select('*');
-      if (classesData) setClasses(classesData);
-
-      const { data: usersData } = await supabase.from('users').select('*');
-      if (usersData) {
-        const mappedUsers = usersData.map((u: any) => ({
-          ...u,
-          classId: u.class_id,
-        }));
-        setUsers(mappedUsers);
-      }
-      
-      const { data: emailData } = await supabase.from('sent_emails').select('*').order('created_at', { ascending: false });
-      if (emailData) setSentEmails(emailData);
-
-      const { data: logsData } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50);
-      if (logsData) setAuditLogs(logsData as AuditLog[]);
-      
+      // 1. Settings
       const { data: settingsData } = await supabase.from('app_settings').select('*');
       if (settingsData) {
         const schoolNameSetting = settingsData.find(s => s.key === 'school_name');
@@ -318,14 +288,96 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         }
       }
 
+      // 2. Core Entities
+      const { data: classesData } = await supabase.from('classes').select('*');
+      if (classesData) setClasses(classesData);
+
+      const { data: usersData } = await supabase.from('users').select('*');
+      if (usersData) {
+        setUsers(usersData.map((u: any) => ({ ...u, classId: u.class_id })));
+      }
+
+      // 3. Content Data (Mapping snake_case to camelCase)
+      const { data: annData } = await supabase.from('announcements').select('*').order('date', { ascending: false });
+      if (annData) {
+        setAnnouncements(annData.map((a: any) => ({
+          ...a,
+          classId: a.class_id,
+          authorId: a.author_id,
+          durationHours: a.duration_hours
+        })));
+      }
+
+      const { data: meetData } = await supabase.from('meets').select('*').order('date', { ascending: true });
+      if (meetData) {
+        setMeets(meetData.map((m: any) => ({
+          ...m,
+          teacherName: m.teacher_name,
+          classId: m.class_id,
+          authorId: m.author_id
+        })));
+      }
+
+      const { data: examData } = await supabase.from('exams').select('*').order('date', { ascending: true });
+      if (examData) {
+        setExams(examData.map((e: any) => ({
+          ...e,
+          durationMinutes: e.duration_minutes,
+          classId: e.class_id,
+          authorId: e.author_id
+        })));
+      }
+
+      const { data: pollData } = await supabase.from('polls').select('*').order('created_at', { ascending: false });
+      if (pollData) {
+        setPolls(pollData.map((p: any) => ({
+          ...p,
+          createdAt: p.created_at,
+          isAnonymous: p.is_anonymous,
+          classId: p.class_id,
+          authorId: p.author_id,
+          durationHours: p.duration_hours,
+          options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options // Handle JSONB
+        })));
+      }
+
+      const { data: ttData } = await supabase.from('time_tables').select('*').order('date_added', { ascending: false });
+      if (ttData) {
+        setTimeTables(ttData.map((t: any) => ({
+          ...t,
+          fileUrl: t.file_url,
+          fileName: t.file_name,
+          dateAdded: t.date_added,
+          classId: t.class_id,
+          authorId: t.author_id
+        })));
+      }
+
+      const { data: courseData } = await supabase.from('courses').select('*');
+      if (courseData) {
+        setCourses(courseData.map((c: any) => ({
+          ...c,
+          dayOfWeek: c.day_of_week,
+          startTime: c.start_time,
+          endTime: c.end_time,
+          classId: c.class_id
+        })));
+      }
+      
+      const { data: emailData } = await supabase.from('sent_emails').select('*').order('created_at', { ascending: false });
+      if (emailData) setSentEmails(emailData);
+
+      const { data: logsData } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50);
+      if (logsData) setAuditLogs(logsData as AuditLog[]);
+
     } catch (err) {
-      console.error("Erreur chargement données:", err);
+      console.error("Erreur chargement Supabase:", err);
     }
   };
 
   useEffect(() => {
     refreshAllData();
-  }, [user]);
+  }, [user]); // Refresh when user changes/logs in
 
   // --- Auth ---
   const login = async (email: string, password?: string, rememberMe?: boolean) => {
@@ -337,11 +389,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         .single();
 
       let matchedUser = dbUser;
-
-      if (error || !dbUser) {
-        const localUser = users.find(u => u.email === email);
-        if (localUser) matchedUser = localUser;
-      }
 
       if (!matchedUser) {
         return false;
@@ -405,14 +452,33 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     logAction('CONFIG', `Mise à jour config email: ${config.provider}`, 'WARNING');
   };
 
-  // --- Content Management Wrappers ---
+  // --- Content Management Wrappers (DB Persistence) ---
 
   // ANNOUNCEMENTS
   const addAnnouncement = async (item: any, targetRoles?: Role[]) => {
-    const newItem = { ...item, id: Math.random().toString(36).substr(2, 9), authorId: user?.id, classId: user?.classId };
-    setAnnouncements(prev => [newItem, ...prev]);
-    addNotification('Annonce publiée avec succès', 'SUCCESS', 'infos', newItem.id);
-    logAction('PUBLICATION', `Annonce: ${item.title}`);
+    const id = Math.random().toString(36).substr(2, 9); // Generate ID locally or rely on DB return
+    const dbPayload = {
+      id,
+      title: item.title,
+      content: item.content,
+      date: item.date || new Date().toISOString(),
+      urgency: item.urgency,
+      link: item.link,
+      attachments: item.attachments, // Assumes DB has JSONB column
+      duration_hours: item.durationHours,
+      author_id: user?.id,
+      class_id: user?.classId
+    };
+
+    const { error } = await supabase.from('announcements').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Annonce publiée avec succès', 'SUCCESS', 'infos', id);
+        logAction('PUBLICATION', `Annonce: ${item.title}`);
+    } else {
+        console.error(error);
+        addNotification('Erreur sauvegarde annonce', 'ERROR');
+    }
   };
 
   const updateAnnouncement = async (id: string, item: any) => {
@@ -420,13 +486,23 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative modif annonce ${id} par ${user?.name}`, 'CRITICAL');
        return;
     }
 
-    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, ...item } : a));
-    addNotification('Annonce mise à jour', 'SUCCESS', 'infos', id);
-    logAction('MODIFICATION', `Annonce ID: ${id}`);
+    const dbPayload: any = {};
+    if (item.title) dbPayload.title = item.title;
+    if (item.content) dbPayload.content = item.content;
+    if (item.urgency) dbPayload.urgency = item.urgency;
+    if (item.durationHours !== undefined) dbPayload.duration_hours = item.durationHours;
+    if (item.link !== undefined) dbPayload.link = item.link;
+    if (item.attachments) dbPayload.attachments = item.attachments;
+
+    const { error } = await supabase.from('announcements').update(dbPayload).eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Annonce mise à jour', 'SUCCESS', 'infos', id);
+        logAction('MODIFICATION', `Annonce ID: ${id}`);
+    }
   };
 
   const deleteAnnouncement = async (id: string) => {
@@ -434,21 +510,36 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative suppression annonce ${id} par ${user?.name}`, 'CRITICAL');
        return;
     }
 
-    setAnnouncements(prev => prev.filter(a => a.id !== id));
-    addNotification('Annonce supprimée', 'INFO');
-    logAction('SUPPRESSION', `Annonce ID: ${id}`, 'WARNING');
+    const { error } = await supabase.from('announcements').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Annonce supprimée', 'INFO');
+        logAction('SUPPRESSION', `Annonce ID: ${id}`, 'WARNING');
+    }
   };
 
   // MEETS
   const addMeet = async (item: any, targetRoles?: Role[]) => {
-    const newItem = { ...item, id: Math.random().toString(36).substr(2, 9), classId: user?.classId, authorId: user?.id };
-    setMeets(prev => [...prev, newItem]);
-    addNotification('Session Meet programmée', 'SUCCESS', 'meet', newItem.id);
-    logAction('CREATION', `Meet: ${item.subject}`);
+    const id = Math.random().toString(36).substr(2, 9);
+    const dbPayload = {
+      id,
+      subject: item.subject,
+      link: item.link,
+      date: item.date,
+      teacher_name: item.teacherName,
+      class_id: user?.classId,
+      author_id: user?.id
+    };
+
+    const { error } = await supabase.from('meets').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Session Meet programmée', 'SUCCESS', 'meet', id);
+        logAction('CREATION', `Meet: ${item.subject}`);
+    }
   };
 
   const updateMeet = async (id: string, item: any) => {
@@ -456,13 +547,20 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative modif meet ${id}`, 'CRITICAL');
        return;
     }
 
-    setMeets(prev => prev.map(m => m.id === id ? { ...m, ...item } : m));
-    addNotification('Session Meet mise à jour', 'SUCCESS', 'meet', id);
-    logAction('MODIFICATION', `Meet ID: ${id}`);
+    const dbPayload: any = {};
+    if (item.subject) dbPayload.subject = item.subject;
+    if (item.link) dbPayload.link = item.link;
+    if (item.date) dbPayload.date = item.date;
+    if (item.teacherName) dbPayload.teacher_name = item.teacherName;
+
+    const { error } = await supabase.from('meets').update(dbPayload).eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Session Meet mise à jour', 'SUCCESS', 'meet', id);
+    }
   };
 
   const deleteMeet = async (id: string) => {
@@ -470,21 +568,37 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative suppression meet ${id}`, 'CRITICAL');
        return;
     }
 
-    setMeets(prev => prev.filter(m => m.id !== id));
-    addNotification('Session Meet supprimée', 'INFO');
-    logAction('SUPPRESSION', `Meet ID: ${id}`, 'WARNING');
+    const { error } = await supabase.from('meets').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Session Meet supprimée', 'INFO');
+        logAction('SUPPRESSION', `Meet ID: ${id}`, 'WARNING');
+    }
   };
 
   // EXAMS
   const addExam = async (item: any, targetRoles?: Role[]) => {
-    const newItem = { ...item, id: Math.random().toString(36).substr(2, 9), authorId: user?.id, classId: user?.classId };
-    setExams(prev => [...prev, newItem]);
-    addNotification('Examen planifié', 'SUCCESS', 'ds', newItem.id);
-    logAction('CREATION', `Examen: ${item.subject}`);
+    const id = Math.random().toString(36).substr(2, 9);
+    const dbPayload = {
+      id,
+      subject: item.subject,
+      date: item.date,
+      duration_minutes: item.durationMinutes,
+      room: item.room,
+      notes: item.notes,
+      author_id: user?.id,
+      class_id: user?.classId
+    };
+
+    const { error } = await supabase.from('exams').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Examen planifié', 'SUCCESS', 'ds', id);
+        logAction('CREATION', `Examen: ${item.subject}`);
+    }
   };
 
   const updateExam = async (id: string, item: any) => {
@@ -492,13 +606,21 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative modif examen ${id}`, 'CRITICAL');
        return;
     }
 
-    setExams(prev => prev.map(e => e.id === id ? { ...e, ...item } : e));
-    addNotification('Examen mis à jour', 'SUCCESS', 'ds', id);
-    logAction('MODIFICATION', `Examen ID: ${id}`);
+    const dbPayload: any = {};
+    if (item.subject) dbPayload.subject = item.subject;
+    if (item.date) dbPayload.date = item.date;
+    if (item.durationMinutes) dbPayload.duration_minutes = item.durationMinutes;
+    if (item.room) dbPayload.room = item.room;
+    if (item.notes !== undefined) dbPayload.notes = item.notes;
+
+    const { error } = await supabase.from('exams').update(dbPayload).eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Examen mis à jour', 'SUCCESS', 'ds', id);
+    }
   };
 
   const deleteExam = async (id: string) => {
@@ -506,27 +628,39 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative suppression examen ${id}`, 'CRITICAL');
        return;
     }
 
-    setExams(prev => prev.filter(e => e.id !== id));
-    addNotification('Examen supprimé', 'INFO');
-    logAction('SUPPRESSION', `Examen ID: ${id}`, 'WARNING');
+    const { error } = await supabase.from('exams').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Examen supprimé', 'INFO');
+        logAction('SUPPRESSION', `Examen ID: ${id}`, 'WARNING');
+    }
   };
 
   // POLLS
   const addPoll = async (item: any) => {
-    const newItem = { 
-      ...item, 
-      id: Math.random().toString(36).substr(2, 9), 
-      createdAt: new Date().toISOString(), 
-      classId: user?.classId,
-      authorId: user?.id 
+    const id = Math.random().toString(36).substr(2, 9);
+    const dbPayload = { 
+      id,
+      question: item.question,
+      type: item.type || 'SINGLE',
+      options: item.options, // JSONB
+      active: true,
+      created_at: new Date().toISOString(), 
+      is_anonymous: item.isAnonymous,
+      duration_hours: item.durationHours,
+      class_id: user?.classId,
+      author_id: user?.id 
     };
-    setPolls(prev => [newItem, ...prev]);
-    addNotification('Sondage publié', 'SUCCESS', 'polls', newItem.id);
-    logAction('CREATION', `Sondage: ${item.question}`);
+
+    const { error } = await supabase.from('polls').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Sondage publié', 'SUCCESS', 'polls', id);
+        logAction('CREATION', `Sondage: ${item.question}`);
+    }
   };
 
   const updatePoll = async (id: string, item: any) => {
@@ -534,30 +668,44 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative modif sondage ${id}`, 'CRITICAL');
        return;
     }
 
-    setPolls(prev => prev.map(p => p.id === id ? { ...p, ...item } : p));
+    const dbPayload: any = {};
+    if (item.active !== undefined) dbPayload.active = item.active;
+    if (item.options) dbPayload.options = item.options; // JSONB
+    
+    // Note: If options logic is complex (adding/removing), managing JSON array in DB is tricky with just update.
+    // For now, replacing the whole array works.
+
+    const { error } = await supabase.from('polls').update(dbPayload).eq('id', id);
+    if (!error) refreshAllData();
   };
 
   const votePoll = async (pollId: string, optionId: string) => {
     if (!user) return;
-    setPolls(prev => prev.map(poll => {
-      if (poll.id !== pollId) return poll;
-      
-      const cleanedOptions = poll.options.map(opt => ({
-        ...opt,
-        voterIds: opt.voterIds.filter(vid => vid !== user.id)
-      }));
+    
+    const poll = polls.find(p => p.id === pollId);
+    if (!poll) return;
 
-      const updatedOptions = cleanedOptions.map(opt => 
-        opt.id === optionId ? { ...opt, voterIds: [...opt.voterIds, user.id] } : opt
-      );
-
-      return { ...poll, options: updatedOptions };
+    // Logic to update local state logic reflected for DB:
+    const cleanedOptions = poll.options.map(opt => ({
+      ...opt,
+      voterIds: opt.voterIds.filter(vid => vid !== user.id)
     }));
-    addNotification('Vote enregistré', 'SUCCESS');
+
+    const updatedOptions = cleanedOptions.map(opt => 
+      opt.id === optionId ? { ...opt, voterIds: [...opt.voterIds, user.id] } : opt
+    );
+
+    // Update DB (replacing the JSON)
+    const { error } = await supabase.from('polls').update({ options: updatedOptions }).eq('id', pollId);
+    if (!error) {
+        refreshAllData();
+        addNotification('Vote enregistré', 'SUCCESS');
+    } else {
+        addNotification('Erreur lors du vote', 'ERROR');
+    }
   };
 
   const deletePoll = async (id: string) => {
@@ -565,27 +713,37 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative suppression sondage ${id}`, 'CRITICAL');
        return;
     }
 
-    setPolls(prev => prev.filter(p => p.id !== id));
-    addNotification('Sondage supprimé', 'INFO');
-    logAction('SUPPRESSION', `Sondage ID: ${id}`, 'WARNING');
+    const { error } = await supabase.from('polls').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Sondage supprimé', 'INFO');
+    }
   };
 
   // --- TIME TABLES (Fichiers) ---
   const addTimeTable = async (item: Omit<TimeTable, 'id' | 'authorId' | 'classId' | 'dateAdded'>) => {
-    const newItem: TimeTable = { 
-      ...item, 
-      id: Math.random().toString(36).substr(2, 9), 
-      dateAdded: new Date().toISOString(), 
-      classId: user?.classId || '',
-      authorId: user?.id || '' 
+    const id = Math.random().toString(36).substr(2, 9);
+    const dbPayload = { 
+      id,
+      title: item.title,
+      file_url: item.fileUrl,
+      file_name: item.fileName,
+      date_added: new Date().toISOString(), 
+      class_id: user?.classId || '',
+      author_id: user?.id || '' 
     };
-    setTimeTables(prev => [newItem, ...prev]);
-    addNotification('Emploi du temps ajouté', 'SUCCESS', 'timetable', newItem.id);
-    logAction('CREATION', `Emploi du temps: ${item.title}`);
+
+    const { error } = await supabase.from('time_tables').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Emploi du temps ajouté', 'SUCCESS', 'timetable', id);
+        logAction('CREATION', `Emploi du temps: ${item.title}`);
+    } else {
+        addNotification("Erreur d'ajout (Fichier peut-être trop lourd)", 'ERROR');
+    }
   };
 
   const deleteTimeTable = async (id: string) => {
@@ -593,31 +751,47 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!existing) return;
     if (existing.authorId !== user?.id && user?.role !== Role.ADMIN) {
        addNotification("Action non autorisée", "ERROR");
-       logAction('SECURITY', `Tentative suppression emploi du temps ${id}`, 'CRITICAL');
        return;
     }
 
-    setTimeTables(prev => prev.filter(t => t.id !== id));
-    addNotification('Emploi du temps supprimé', 'INFO');
-    logAction('SUPPRESSION', `Emploi du temps ID: ${id}`, 'WARNING');
+    const { error } = await supabase.from('time_tables').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Emploi du temps supprimé', 'INFO');
+        logAction('SUPPRESSION', `Emploi du temps ID: ${id}`, 'WARNING');
+    }
   };
 
   // --- COURSES (Calendrier Interactif) ---
   const addCourse = async (item: Omit<Course, 'id' | 'classId'>) => {
     if (!user) return;
-    const newCourse: Course = {
-      ...item,
-      id: Math.random().toString(36).substr(2, 9),
-      classId: user.classId || 'default'
+    const id = Math.random().toString(36).substr(2, 9);
+    const dbPayload = {
+      id,
+      subject: item.subject,
+      teacher: item.teacher,
+      room: item.room,
+      day_of_week: item.dayOfWeek,
+      start_time: item.startTime,
+      end_time: item.endTime,
+      color: item.color,
+      class_id: user.classId || 'default'
     };
-    setCourses(prev => [...prev, newCourse]);
-    addNotification('Cours ajouté au calendrier', 'SUCCESS');
-    logAction('CALENDRIER', `Ajout cours: ${item.subject}`);
+
+    const { error } = await supabase.from('courses').insert([dbPayload]);
+    if (!error) {
+        refreshAllData();
+        addNotification('Cours ajouté au calendrier', 'SUCCESS');
+        logAction('CALENDRIER', `Ajout cours: ${item.subject}`);
+    }
   };
 
   const deleteCourse = async (id: string) => {
-    setCourses(prev => prev.filter(c => c.id !== id));
-    addNotification('Cours retiré du calendrier', 'INFO');
+    const { error } = await supabase.from('courses').delete().eq('id', id);
+    if (!error) {
+        refreshAllData();
+        addNotification('Cours retiré du calendrier', 'INFO');
+    }
   };
 
   // --- SHARE FUNCTION (EMAIL with SendGrid Support) ---
