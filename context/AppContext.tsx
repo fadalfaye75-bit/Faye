@@ -522,12 +522,43 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (!error) { await refreshAllData(); addNotification('Classe supprimée', 'INFO'); }
   };
   
-  const addUser = async (userData: any) => {
-    addNotification("En production, utilisez l'invitation par email Supabase", "INFO");
+  const addUser = async (userData: Omit<User, 'id'>) => {
+    // Note: This only creates the profile in the public 'users' table. 
+    // The actual Supabase Auth user must be created via the Dashboard or an Edge Function to allow login.
+    const { error } = await supabase.from('users').insert([{
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        class_id: userData.classId || null,
+        avatar: userData.avatar
+    }]);
+    
+    if (!error) { 
+        await refreshAllData(); 
+        addNotification('Profil utilisateur ajouté', 'SUCCESS'); 
+    } else {
+        console.error("Erreur ajout user:", error);
+        addNotification(`Erreur: ${error.message}`, 'ERROR');
+    }
   };
   
-  const importUsers = async (usersData: any[]) => {
-     addNotification("Importation simulée pour prototype", "INFO");
+  const importUsers = async (usersData: Omit<User, 'id'>[]) => {
+     // Maps to DB column names (snake_case)
+     const dbData = usersData.map(u => ({
+         name: u.name,
+         email: u.email,
+         role: u.role,
+         class_id: u.classId || null
+     }));
+
+     const { error } = await supabase.from('users').insert(dbData);
+     if (!error) { 
+         await refreshAllData(); 
+         addNotification(`${usersData.length} utilisateurs importés`, 'SUCCESS'); 
+     } else {
+         console.error("Erreur import:", error);
+         addNotification(`Erreur lors de l'import: ${error.message}`, 'ERROR');
+     }
   };
   
   const updateUser = async (id: string, item: any) => {

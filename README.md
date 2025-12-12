@@ -44,18 +44,6 @@ L'application sera accessible sur `http://localhost:5173`.
 
 ---
 
-## 🔐 Comptes de Démonstration
-
-Une fois la base de données Supabase connectée (voir script SQL fourni), voici les utilisateurs par défaut :
-
-| Rôle | Email | Mot de passe (Simulé) |
-| :--- | :--- | :--- |
-| **Admin** | `faye@eco.com` | `passer25` |
-| **Responsable** | `diallo@eco.com` | `(au choix)` |
-| **Étudiant** | `ami@student.com` | `(au choix)` |
-
----
-
 ## 📦 Déploiement sur Vercel (Production)
 
 Ce projet est optimisé pour Vercel. Voici comment configurer la clé API de l'IA :

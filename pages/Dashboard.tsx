@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Calendar, TrendingUp, AlertCircle, ArrowRight, PieChart as PieChartIcon, Zap, Megaphone, Clock } from 'lucide-react';
 import { Role } from '../types';
@@ -37,8 +37,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const activePolls = myPolls.filter(p => p.active);
   const totalPolls = myPolls.length;
   
-  // Fake participation data
-  const participationRate = totalPolls > 0 ? 75 : 0;
+  // --- REAL DATA CALCULATION ---
+  // Calcul du taux de participation réel
+  const participationStats = useMemo(() => {
+    if (totalPolls === 0 || users.length === 0) return { rate: 0, voted: 0, total: 0 };
+
+    // Total des votes effectués dans tous les sondages visibles
+    const totalVotesCast = myPolls.reduce((acc, poll) => {
+        return acc + poll.options.reduce((sum, opt) => sum + opt.voterIds.length, 0);
+    }, 0);
+
+    // Estimation du nombre total de votes possibles (Nb Sondages * Nb Utilisateurs)
+    // Note: C'est une estimation car certains sondages pourraient cibler une classe spécifique, 
+    // mais pour le dashboard global, cela donne une bonne tendance.
+    const totalPossibleVotes = totalPolls * users.length;
+
+    const rate = Math.round((totalVotesCast / totalPossibleVotes) * 100) || 0;
+    
+    return { rate, voted: rate, total: 100 };
+  }, [myPolls, users, totalPolls]);
+
+  const participationRate = participationStats.rate;
+  
   const pieData = [
     { name: 'Votants', value: participationRate },
     { name: 'Abstention', value: 100 - participationRate },
