@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, MeetSession } from '../types';
@@ -25,8 +24,8 @@ export const Meet: React.FC = () => {
 
   const [targetRoles, setTargetRoles] = useState<Role[]>([]);
   
-  // Permission: Responsable UNIQUEMENT peut créer. L'Admin supervise.
-  const canManage = user?.role === Role.RESPONSIBLE;
+  // Permission: Responsable ET Admin peuvent créer
+  const canManage = user?.role === Role.RESPONSIBLE || user?.role === Role.ADMIN;
   const isAdmin = user?.role === Role.ADMIN;
 
   // --- FILTER BY CLASS (Admin voit tout) ---
@@ -131,8 +130,8 @@ export const Meet: React.FC = () => {
            const isSoon = isAfter(meetDate, now) && isBefore(meetDate, addMinutes(now, 60));
            const isLive = isBefore(meetDate, now) && isBefore(now, addMinutes(meetDate, 60));
 
-           // PERMISSION : Seul le créateur voit les boutons. (Admin n'étant pas créateur, il ne les voit pas)
            const isAuthor = user?.id === meet.authorId;
+           const canManageThisMeet = isAuthor || isAdmin;
 
            return (
             <div key={meet.id} className={`bg-white dark:bg-slate-900 rounded-2xl border p-5 md:p-6 flex flex-col md:flex-row items-center gap-6 shadow-sm hover:-translate-y-1 transition duration-300 group ${isLive || isSoon ? 'border-emerald-500 shadow-emerald-500/10 ring-1 ring-emerald-500/20' : 'border-slate-200 dark:border-slate-800'}`}>
@@ -174,14 +173,6 @@ export const Meet: React.FC = () => {
 
                {/* Actions */}
                <div className="flex flex-col w-full md:w-auto gap-3">
-                 {isAdmin ? (
-                    <button 
-                      disabled
-                      className="w-full md:w-auto text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-6 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 cursor-not-allowed"
-                    >
-                      <span>Lecture Seule</span> <Lock className="w-4 h-4" />
-                    </button>
-                 ) : (
                    <a 
                      href={meet.link} 
                      target="_blank" 
@@ -192,7 +183,6 @@ export const Meet: React.FC = () => {
                    >
                      <span>Rejoindre</span> <ExternalLink className="w-4 h-4" />
                    </a>
-                 )}
                  
                  <div className="flex gap-2 w-full">
                      <button 
@@ -202,7 +192,7 @@ export const Meet: React.FC = () => {
                      >
                         <Copy className="w-4 h-4" />
                      </button>
-                     {isAuthor && (
+                     {canManageThisMeet && (
                        <>
                           <button 
                             onClick={() => setShareConfirmation(meet)}

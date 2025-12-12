@@ -74,8 +74,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
-        // We call refreshAllData again after setting user to ensure user-specific data is fresh if needed
-        // but since our RLS policies are public for this app, the first call is enough.
         console.log("Session restaurée pour :", parsedUser.name);
       } catch (e) {
         console.error("Session invalide");
@@ -93,7 +91,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
   // --- DATA FETCHING (SUPABASE) ---
   const refreshAllData = async () => {
     try {
-      // 1. Settings & Config
+      // 1. Settings & Config (Sequential as it's fast and needed for context)
       const { data: settingsData } = await supabase.from('app_settings').select('*');
       if (settingsData) {
         const name = settingsData.find(s => s.key === 'school_name')?.value;
@@ -104,20 +102,42 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         if (provider) setEmailConfig(prev => ({ ...prev, provider: provider as any, senderEmail: sender }));
       }
 
-      // 2. Core Entities
-      const { data: classesData } = await supabase.from('classes').select('*');
-      if (classesData) setClasses(classesData);
+      // 2. PARALLEL FETCHING for better performance
+      const [
+        classesRes, 
+        usersRes, 
+        annRes, 
+        meetRes, 
+        examRes, 
+        pollRes, 
+        ttRes, 
+        courseRes, 
+        emailRes, 
+        logsRes
+      ] = await Promise.all([
+        supabase.from('classes').select('*'),
+        supabase.from('users').select('*'),
+        supabase.from('announcements').select('*').order('date', { ascending: false }),
+        supabase.from('meets').select('*').order('date', { ascending: true }),
+        supabase.from('exams').select('*').order('date', { ascending: true }),
+        supabase.from('polls').select('*').order('created_at', { ascending: false }),
+        supabase.from('time_tables').select('*').order('date_added', { ascending: false }),
+        supabase.from('courses').select('*'),
+        supabase.from('sent_emails').select('*').order('created_at', { ascending: false }),
+        supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50)
+      ]);
 
-      const { data: usersData } = await supabase.from('users').select('*');
-      if (usersData) {
-        // Map database column snake_case to app camelCase
-        setUsers(usersData.map((u: any) => ({ ...u, classId: u.class_id })));
+      // Process Classes
+      if (classesRes.data) setClasses(classesRes.data);
+
+      // Process Users
+      if (usersRes.data) {
+        setUsers(usersRes.data.map((u: any) => ({ ...u, classId: u.class_id })));
       }
 
-      // 3. Content
-      const { data: annData } = await supabase.from('announcements').select('*').order('date', { ascending: false });
-      if (annData) {
-        setAnnouncements(annData.map((a: any) => ({
+      // Process Announcements
+      if (annRes.data) {
+        setAnnouncements(annRes.data.map((a: any) => ({
           ...a,
           classId: a.class_id,
           authorId: a.author_id,
@@ -125,9 +145,9 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         })));
       }
 
-      const { data: meetData } = await supabase.from('meets').select('*').order('date', { ascending: true });
-      if (meetData) {
-        setMeets(meetData.map((m: any) => ({
+      // Process Meets
+      if (meetRes.data) {
+        setMeets(meetRes.data.map((m: any) => ({
           ...m,
           teacherName: m.teacher_name,
           classId: m.class_id,
@@ -135,9 +155,9 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         })));
       }
 
-      const { data: examData } = await supabase.from('exams').select('*').order('date', { ascending: true });
-      if (examData) {
-        setExams(examData.map((e: any) => ({
+      // Process Exams
+      if (examRes.data) {
+        setExams(examRes.data.map((e: any) => ({
           ...e,
           durationMinutes: e.duration_minutes,
           classId: e.class_id,
@@ -145,23 +165,22 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         })));
       }
 
-      const { data: pollData } = await supabase.from('polls').select('*').order('created_at', { ascending: false });
-      if (pollData) {
-        setPolls(pollData.map((p: any) => ({
+      // Process Polls
+      if (pollRes.data) {
+        setPolls(pollRes.data.map((p: any) => ({
           ...p,
           createdAt: p.created_at,
           isAnonymous: p.is_anonymous,
           classId: p.class_id,
           authorId: p.author_id,
           durationHours: p.duration_hours,
-          // Supabase returns JSON columns as objects automatically, but verify just in case
           options: typeof p.options === 'string' ? JSON.parse(p.options) : p.options
         })));
       }
 
-      const { data: ttData } = await supabase.from('time_tables').select('*').order('date_added', { ascending: false });
-      if (ttData) {
-        setTimeTables(ttData.map((t: any) => ({
+      // Process TimeTables
+      if (ttRes.data) {
+        setTimeTables(ttRes.data.map((t: any) => ({
           ...t,
           fileUrl: t.file_url,
           fileName: t.file_name,
@@ -171,9 +190,9 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         })));
       }
 
-      const { data: courseData } = await supabase.from('courses').select('*');
-      if (courseData) {
-        setCourses(courseData.map((c: any) => ({
+      // Process Courses
+      if (courseRes.data) {
+        setCourses(courseRes.data.map((c: any) => ({
           ...c,
           dayOfWeek: c.day_of_week,
           startTime: c.start_time,
@@ -182,22 +201,18 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         })));
       }
       
-      const { data: emailData } = await supabase.from('sent_emails').select('*').order('created_at', { ascending: false });
-      if (emailData) setSentEmails(emailData);
-
-      const { data: logsData } = await supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(50);
-      if (logsData) setAuditLogs(logsData as AuditLog[]);
+      // Process Emails & Logs
+      if (emailRes.data) setSentEmails(emailRes.data);
+      if (logsRes.data) setAuditLogs(logsRes.data as AuditLog[]);
 
     } catch (err) {
       console.error("Erreur chargement Supabase:", err);
-      // Fail silently for user, but log for dev
     }
   };
 
   // --- AUTH ---
   const login = async (email: string, password?: string, rememberMe?: boolean) => {
     try {
-      // Fetch user from custom 'users' table
       const { data: dbUser, error } = await supabase
         .from('users')
         .select('*')
@@ -210,7 +225,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       }
 
       if (!dbUser) {
-          console.warn(`Tentative de connexion échouée pour l'email: ${email}`);
           return false;
       }
 
@@ -256,8 +270,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     setUser(null);
     localStorage.removeItem('sunuclasse_user');
     sessionStorage.removeItem('sunuclasse_user');
-    // We can clear data if we want security, but for UX we might keep public data
-    // setAnnouncements([]); 
   };
 
   // ... Helper Functions ...
@@ -313,7 +325,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       await refreshAllData(); 
       addNotification('Annonce publiée', 'SUCCESS'); 
     } else { 
-      console.error('Add Announcement Error:', error);
       addNotification(`Erreur lors de la publication: ${error.message}`, 'ERROR'); 
     }
   };
@@ -332,21 +343,17 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
         await refreshAllData(); 
         addNotification('Annonce mise à jour', 'SUCCESS'); 
     } else {
-        console.error('Update Announcement Error:', error);
         addNotification(`Erreur mise à jour: ${error.message}`, 'ERROR');
     }
   };
 
   const deleteAnnouncement = async (id: string) => {
-    // Suppression locale immédiate (Optimistic UI)
     setAnnouncements(prev => prev.filter(a => a.id !== id));
-    
     const { error } = await supabase.from('announcements').delete().eq('id', id);
     if (!error) { 
         await refreshAllData(); 
         addNotification('Annonce supprimée', 'INFO'); 
     } else {
-        // En cas d'erreur, on rafraîchit pour remettre l'élément
         await refreshAllData();
         addNotification(`Erreur lors de la suppression: ${error.message}`, "ERROR");
     }
@@ -439,7 +446,22 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     const poll = polls.find(p => p.id === pollId);
     if (!poll) return;
 
-    // Supabase needs the full object to update JSON column
+    // Optimistic UI Update locally
+    const newPolls = polls.map(p => {
+       if (p.id === pollId) {
+           const newOptions = p.options.map(opt => ({
+               ...opt,
+               voterIds: opt.voterIds.filter(vid => vid !== user.id)
+           })).map(opt => 
+               opt.id === optionId ? { ...opt, voterIds: [...opt.voterIds, user.id] } : opt
+           );
+           return { ...p, options: newOptions };
+       }
+       return p;
+    });
+    setPolls(newPolls);
+
+    // DB Update
     const cleanedOptions = poll.options.map(opt => ({
       ...opt,
       voterIds: opt.voterIds.filter(vid => vid !== user.id)
@@ -450,7 +472,11 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     );
 
     const { error } = await supabase.from('polls').update({ options: updatedOptions }).eq('id', pollId);
-    if (!error) { await refreshAllData(); addNotification('Vote enregistré', 'SUCCESS'); }
+    if (!error) { 
+        // No full refresh needed if optimistic update worked, but verifying in background is good
+        // await refreshAllData(); 
+        addNotification('Vote enregistré', 'SUCCESS'); 
+    }
   };
 
   const deletePoll = async (id: string) => {
@@ -467,7 +493,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       author_id: user?.id
     }]);
     if (!error) { await refreshAllData(); addNotification('Emploi du temps ajouté', 'SUCCESS'); }
-    else { addNotification("Erreur d'envoi (fichier trop volumineux ?)", 'ERROR'); }
+    else { addNotification("Erreur d'envoi", 'ERROR'); }
   };
 
   const deleteTimeTable = async (id: string) => {
@@ -477,8 +503,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
 
   const addCourse = async (item: any) => {
     if (!user) return;
-    
-    // Payload explicitly defined
     const payload = {
       subject: item.subject,
       teacher: item.teacher,
@@ -487,36 +511,11 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
       start_time: item.startTime,
       end_time: item.endTime,
       color: item.color,
-      class_id: user.classId || null // Ensure null is sent if undefined
+      class_id: user.classId || null
     };
 
     const { error } = await supabase.from('courses').insert([payload]);
-    
-    if (!error) { 
-        await refreshAllData(); 
-        addNotification('Cours ajouté au planning', 'SUCCESS'); 
-    } else {
-        console.error("Erreur ajout cours:", error);
-        
-        let errorMsg = "Erreur inconnue";
-        if (typeof error === 'string') {
-            errorMsg = error;
-        } else if (error && typeof error === 'object') {
-            if ('message' in error && typeof (error as any).message === 'string') {
-                errorMsg = (error as any).message;
-            } else if ('hint' in error && typeof (error as any).hint === 'string') {
-                 errorMsg = (error as any).hint;
-            } else {
-                 try {
-                     errorMsg = JSON.stringify(error);
-                 } catch {
-                     errorMsg = "Erreur (détails non affichables)";
-                 }
-            }
-        }
-        
-        addNotification(`Erreur lors de l'ajout: ${errorMsg}`, 'ERROR');
-    }
+    if (!error) { await refreshAllData(); addNotification('Cours ajouté', 'SUCCESS'); }
   };
 
   const updateCourse = async (id: string, item: any) => {
@@ -530,13 +529,7 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     if (item.color) payload.color = item.color;
 
     const { error } = await supabase.from('courses').update(payload).eq('id', id);
-    if (!error) { 
-        await refreshAllData(); 
-        addNotification('Cours mis à jour', 'SUCCESS'); 
-    } else {
-        console.error("Erreur update cours:", error);
-        addNotification(`Erreur mise à jour: ${error.message}`, 'ERROR');
-    }
+    if (!error) { await refreshAllData(); addNotification('Cours mis à jour', 'SUCCESS'); }
   };
 
   const deleteCourse = async (id: string) => {
@@ -552,7 +545,6 @@ export const AppProvider: React.FC<PropsWithChildren> = ({ children }) => {
     addNotification('Renvoi email...', 'INFO');
   };
 
-  // ADMIN
   const addClass = async (name: string, description: string, email: string) => {
     const { error } = await supabase.from('classes').insert([{ name, description, email }]);
     if (!error) { await refreshAllData(); addNotification('Classe créée', 'SUCCESS'); }

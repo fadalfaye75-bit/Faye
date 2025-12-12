@@ -103,8 +103,8 @@ export const Infos: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Permission: Seulement le Responsable peut créer. L'Admin supervise.
-  const canCreate = user?.role === Role.RESPONSIBLE;
+  // Permission: Responsable ET Admin peuvent créer
+  const canCreate = user?.role === Role.RESPONSIBLE || user?.role === Role.ADMIN;
   const isAdmin = user?.role === Role.ADMIN;
 
   // --- FILTER BY CLASS (Memoized) ---
@@ -215,7 +215,8 @@ export const Infos: React.FC = () => {
     };
 
     if (editingId) {
-      updateAnnouncement(editingId, payload);
+      // Cast explicity as Partial<Announcement> to fix TS build error with nulls
+      updateAnnouncement(editingId, payload as unknown as Partial<Announcement>);
     } else {
       addAnnouncement({
         ...payload,
@@ -444,8 +445,10 @@ export const Infos: React.FC = () => {
         )}
         {currentAnnouncements.map((item) => {
            const author = users.find(u => u.id === item.authorId);
-           // Seul l'auteur peut modifier/supprimer. Comme l'Admin ne peut pas créer, il n'est jamais l'auteur.
+           // Seul l'auteur ou l'Admin peut modifier/supprimer.
            const isAuthor = user?.id === item.authorId;
+           const canEditThis = isAuthor || isAdmin;
+           
            const expirationDate = item.durationHours ? addHours(new Date(item.date), item.durationHours) : null;
            const isExpired = expirationDate ? isAfter(currentTime, expirationDate) : false;
            const style = URGENCY_CONFIG[item.urgency];
@@ -515,7 +518,7 @@ export const Infos: React.FC = () => {
                     <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button onClick={(e) => { e.stopPropagation(); handleCopy(item); }} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-lg transition" title="Copier"><Copy className="w-4 h-4" /></button>
                         <button onClick={(e) => { e.stopPropagation(); setShareConfirmation(item); }} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition" title="Partager"><Send className="w-4 h-4" /></button>
-                        {isAuthor && (
+                        {canEditThis && (
                           <>
                              <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition" title="Modifier"><Pencil className="w-4 h-4" /></button>
                              <button onClick={(e) => { e.stopPropagation(); setDeleteId(item.id); }} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="Supprimer"><Trash2 className="w-4 h-4" /></button>
@@ -629,66 +632,181 @@ export const Infos: React.FC = () => {
                        <div className="grid gap-3">
                           {viewingItem.attachments.filter(a => a.type === 'PDF').map(pdf => (
                              <div key={pdf.id} className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                   <div className="w-10 h-10 bg-red-100 text-red-500 rounded-lg flex items-center justify-center shrink-0"><FileText className="w-5 h-5"/></div>
-                                   <span className="font-bold text-slate-700 dark:text-slate-300 truncate">{pdf.name}</span>
+                                <div className="flex items-center gap-3">
+                                   <div className="p-2 bg-red-100 text-red-500 rounded-lg"><FileText className="w-5 h-5" /></div>
+                                   <span className="font-bold text-slate-700 dark:text-slate-200">{pdf.name}</span>
                                 </div>
-                                <a href={pdf.url} download={pdf.name} className="p-2 bg-white dark:bg-slate-700 rounded-lg text-slate-500 hover:text-sky-600 shadow-sm border border-slate-100 dark:border-slate-600 transition"><Download className="w-5 h-5"/></a>
+                                <a href={pdf.url} download={pdf.name} className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition"><Download className="w-5 h-5" /></a>
                              </div>
                           ))}
                        </div>
                     </div>
                  )}
 
-                 {/* GALERIE IMAGES AVEC BOUTON DE TELECHARGEMENT */}
+                 {/* FICHIERS JOINTS (IMAGES) */}
                  {viewingItem.attachments?.some(a => a.type === 'IMAGE') && (
-                    <div className="mb-8">
-                       <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> Photos</h4>
-                       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                       <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> Images</h4>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           {viewingItem.attachments.filter(a => a.type === 'IMAGE').map(img => (
-                             <div key={img.id} className="relative group aspect-square rounded-xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-700 bg-slate-100">
-                                <img src={img.url} alt={img.name} className="w-full h-full object-cover" />
-                                
+                             <div key={img.id} className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 relative group">
+                                <img src={img.url} alt={img.name} className="w-full h-auto object-cover" />
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                                   <button 
-                                      onClick={() => window.open(img.url, '_blank')} 
-                                      className="p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition"
-                                      title="Voir en plein écran"
-                                   >
-                                      <Eye className="w-6 h-6" />
-                                   </button>
-                                   <a 
-                                      href={img.url} 
-                                      download={img.name} 
-                                      className="p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition"
-                                      title="Télécharger"
-                                      onClick={(e) => e.stopPropagation()}
-                                   >
-                                      <Download className="w-6 h-6" />
-                                   </a>
+                                   <a href={img.url} download={img.name} className="p-2 bg-white rounded-full text-slate-800 hover:scale-110 transition shadow-lg"><Download className="w-5 h-5" /></a>
                                 </div>
                              </div>
                           ))}
                        </div>
                     </div>
                  )}
-
-                 <div className="mt-10 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
-                    <button onClick={() => handleCopy(viewingItem)} className="px-5 py-3 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-2"><Copy className="w-4 h-4"/> <span className="hidden md:inline">Copier le texte</span></button>
-                    <button onClick={() => setViewingItem(null)} className="px-8 py-3 bg-[#0EA5E9] text-white font-bold rounded-2xl hover:bg-[#0284C7] shadow-lg shadow-[#87CEEB]/30 transition">Fermer</button>
-                 </div>
               </div>
            </div>
         </div>
       )}
-      
-      {/* Delete/Share Confirmations ... (unchanged) */}
+
+      {/* MODALE DE CREATION/EDITION */}
+      {isModalOpen && canCreate && (
+         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[150] flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-t-3xl md:rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden">
+               <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950 shrink-0">
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-white uppercase tracking-wide">
+                     {editingId ? 'Modifier l\'annonce' : 'Nouvelle Annonce'}
+                  </h3>
+                  <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full transition active:scale-90">
+                     <X className="w-6 h-6" />
+                  </button>
+               </div>
+               
+               <div className="overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900">
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Titre</label>
+                        <input 
+                           required 
+                           type="text" 
+                           value={title} 
+                           onChange={e => setTitle(e.target.value)} 
+                           className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-lg font-bold focus:ring-2 focus:ring-[#87CEEB]/20 focus:border-[#87CEEB] outline-none transition text-slate-800 dark:text-white" 
+                           placeholder="Ex: Rentrée 2025"
+                        />
+                     </div>
+
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Niveau d'urgence</label>
+                        <div className="flex gap-3">
+                           {[Urgency.INFO, Urgency.NORMAL, Urgency.URGENT].map((u) => {
+                              const style = URGENCY_CONFIG[u];
+                              return (
+                                 <button
+                                    key={u}
+                                    type="button"
+                                    onClick={() => setUrgency(u)}
+                                    className={`flex-1 py-3 px-2 rounded-xl border flex items-center justify-center gap-2 transition ${urgency === u ? `${style.bg} ${style.border} ${style.color} ring-2 ring-offset-2 dark:ring-offset-slate-900` : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                 >
+                                    <style.icon className="w-4 h-4" />
+                                    <span className="text-xs font-bold">{style.label}</span>
+                                 </button>
+                              );
+                           })}
+                        </div>
+                     </div>
+
+                     <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Contenu</label>
+                        <textarea 
+                           required 
+                           value={content} 
+                           onChange={e => setContent(e.target.value)} 
+                           className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-base focus:ring-2 focus:ring-[#87CEEB]/20 focus:border-[#87CEEB] outline-none transition min-h-[150px] text-slate-800 dark:text-white" 
+                           placeholder="Détails de l'annonce..."
+                        />
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Durée (Heures) - Optionnel</label>
+                           <div className="relative">
+                              <Timer className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                              <input 
+                                 type="number" 
+                                 min="1"
+                                 value={durationHours} 
+                                 onChange={e => setDurationHours(e.target.value === '' ? '' : Number(e.target.value))} 
+                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pl-10 text-base font-bold focus:ring-2 focus:ring-[#87CEEB]/20 focus:border-[#87CEEB] outline-none transition text-slate-800 dark:text-white" 
+                                 placeholder="Illimité" 
+                              />
+                           </div>
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Lien Externe - Optionnel</label>
+                           <div className="relative">
+                              <LinkIcon className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                              <input 
+                                 type="url" 
+                                 value={link} 
+                                 onChange={e => setLink(e.target.value)} 
+                                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 pl-10 text-base font-medium focus:ring-2 focus:ring-[#87CEEB]/20 focus:border-[#87CEEB] outline-none transition text-sky-600" 
+                                 placeholder="https://..." 
+                              />
+                           </div>
+                        </div>
+                     </div>
+
+                     <div>
+                        <div className="flex justify-between items-center mb-2">
+                           <label className="block text-xs font-bold text-slate-500 uppercase">Pièces Jointes</label>
+                           <button 
+                              type="button" 
+                              onClick={() => fileInputRef.current?.click()}
+                              className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+                           >
+                              <Plus className="w-3 h-3" /> Ajouter
+                           </button>
+                        </div>
+                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} accept="image/*,application/pdf" />
+                        
+                        {attachments.length === 0 ? (
+                           <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center cursor-pointer hover:border-[#87CEEB] hover:bg-sky-50 dark:hover:bg-sky-900/10 transition">
+                              <p className="text-sm text-slate-400 font-medium">Cliquez pour ajouter une image ou un PDF (Max 3Mo)</p>
+                           </div>
+                        ) : (
+                           <div className="space-y-2">
+                              {attachments.map(att => (
+                                 <div key={att.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                       <div className={`p-2 rounded-lg ${att.type === 'PDF' ? 'bg-red-100 text-red-500' : 'bg-purple-100 text-purple-500'}`}>
+                                          {att.type === 'PDF' ? <FileText className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+                                       </div>
+                                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{att.name}</span>
+                                    </div>
+                                    <button type="button" onClick={() => removeAttachment(att.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 className="w-4 h-4" /></button>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </div>
+
+                     <div className="flex flex-col-reverse md:flex-row gap-3 pt-4">
+                        <button type="button" onClick={() => setIsModalOpen(false)} className="w-full md:w-1/3 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition active:scale-95">
+                           Annuler
+                        </button>
+                        <button type="submit" className="w-full md:w-2/3 btn-primary text-white py-3 rounded-xl font-bold shadow-lg shadow-[#87CEEB]/30 transition active:scale-95">
+                           {editingId ? 'Mettre à jour' : 'Publier'}
+                        </button>
+                     </div>
+                  </form>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* MODALE DE CONFIRMATION (Partage) */}
       {shareConfirmation && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[170] flex items-center justify-center p-4 animate-in fade-in">
            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center border border-slate-100 dark:border-slate-800">
               <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm"><Mail className="w-10 h-10" /></div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Confirmer le partage</h3>
-              <p className="text-slate-500 font-medium mb-8 leading-relaxed">Voulez-vous envoyer l'annonce <strong>"{shareConfirmation.title}"</strong> par email à tous les membres de la classe ?</p>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Partager l'annonce</h3>
+              <p className="text-slate-500 font-medium mb-8 leading-relaxed">Voulez-vous envoyer l'annonce <strong>"{shareConfirmation.title}"</strong> par email à toute la classe ?</p>
               <div className="flex gap-4">
                  <button onClick={() => setShareConfirmation(null)} className="flex-1 py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition">Annuler</button>
                  <button onClick={handleConfirmShare} className="flex-1 py-3.5 bg-emerald-500 text-white font-bold rounded-2xl hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/20">Envoyer</button>
@@ -696,6 +814,8 @@ export const Infos: React.FC = () => {
            </div>
         </div>
       )}
+
+      {/* MODALE DE CONFIRMATION (Suppression) */}
       {deleteId && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[180] flex items-center justify-center p-4 animate-in fade-in">
            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center border border-slate-100 dark:border-slate-800 transform transition-all scale-100">
@@ -707,97 +827,6 @@ export const Infos: React.FC = () => {
                  <button onClick={handleConfirmDelete} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-lg shadow-red-500/20">Supprimer</button>
               </div>
            </div>
-        </div>
-      )}
-
-      {/* CREATE / EDIT FORM */}
-      {isModalOpen && canCreate && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[160] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] relative">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950 shrink-0 rounded-t-[2rem]">
-              <h3 className="font-black text-xl text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-2">
-                <span className="w-2 h-6 bg-[#0EA5E9] rounded-full"></span>{editingId ? 'Modifier l\'annonce' : 'Nouvelle Annonce'}
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-600 p-2 rounded-full transition shadow-sm border border-slate-100 dark:border-slate-800"><X className="w-6 h-6" /></button>
-            </div>
-            
-            <div className="overflow-y-auto p-8 bg-white dark:bg-slate-900 flex-1">
-              <form id="annonce-form" onSubmit={handleSubmit} className="space-y-6">
-                 {/* Title & Content */}
-                 <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Titre</label>
-                    </div>
-                    <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-lg font-bold focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition text-slate-800 dark:text-white placeholder-slate-400" placeholder="Ex: Sortie pédagogique..." />
-                 </div>
-                 
-                 <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Contenu</label>
-                    </div>
-                    <textarea required value={content} onChange={e => setContent(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-base min-h-[150px] focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition leading-relaxed text-slate-800 dark:text-white placeholder-slate-400 font-medium resize-none" placeholder="Détails de l'annonce..." />
-                 </div>
-
-                 {/* Link Input */}
-                 <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Lien Externe (Optionnel)</label>
-                    <div className="relative">
-                      <LinkIcon className="absolute left-4 top-4 w-5 h-5 text-slate-400" />
-                      <input type="url" value={link} onChange={e => setLink(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 pl-12 text-sm font-medium focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition text-sky-600 placeholder-slate-400" placeholder="https://docs.google.com/forms/..." />
-                    </div>
-                 </div>
-
-                 {/* File Uploads */}
-                 <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Pièces Jointes (PDF / Photos) - Max 3 Mo</label>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                       {attachments.map(att => (
-                          <div key={att.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-2 rounded-xl border border-slate-100 dark:border-slate-700">
-                             {att.type === 'PDF' ? <FileText className="w-4 h-4 text-red-500"/> : <ImageIcon className="w-4 h-4 text-purple-500"/>}
-                             <span className="text-xs font-bold truncate max-w-[150px]">{att.name}</span>
-                             <button type="button" onClick={() => removeAttachment(att.id)} className="text-slate-400 hover:text-red-500 ml-1"><X className="w-3.5 h-3.5"/></button>
-                          </div>
-                       ))}
-                    </div>
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition flex items-center gap-2 border border-slate-200 dark:border-slate-700">
-                       <Plus className="w-4 h-4" /> Ajouter un fichier
-                    </button>
-                 </div>
-
-                 {/* Urgency & Duration */}
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Niveau d'urgence</label>
-                        <div className="flex gap-2">
-                        {[Urgency.INFO, Urgency.NORMAL, Urgency.URGENT].map(u => {
-                            const style = URGENCY_CONFIG[u];
-                            const Icon = style.icon;
-                            return (
-                                <button key={u} type="button" onClick={() => setUrgency(u)} className={`flex-1 py-3 rounded-2xl text-xs font-bold border transition flex flex-col items-center gap-1 ${urgency === u ? `${style.bg} ${style.border} ${style.color} ring-2 ring-offset-1 ring-sky-200 dark:ring-sky-900` : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
-                                    <Icon className="w-4 h-4" />
-                                    {style.label}
-                                </button>
-                            );
-                        })}
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2 uppercase">Durée (Heures)</label>
-                        <div className="relative">
-                            <Timer className="absolute left-4 top-4 w-5 h-5 text-slate-400" />
-                            <input type="number" min="1" value={durationHours} onChange={e => setDurationHours(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 pl-12 text-base font-bold focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition text-slate-800 dark:text-white placeholder-slate-400" placeholder="Illimité" />
-                        </div>
-                    </div>
-                 </div>
-              </form>
-            </div>
-            
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-b-[2rem] flex flex-col-reverse md:flex-row gap-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="w-full md:w-1/3 py-3.5 rounded-2xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition active:scale-95">Annuler</button>
-                <button type="submit" form="annonce-form" className="w-full md:w-2/3 bg-[#0EA5E9] text-white py-3.5 rounded-2xl font-bold hover:bg-[#0284C7] shadow-lg shadow-[#87CEEB]/30 transition active:scale-95 flex items-center justify-center gap-2">{editingId ? 'Mettre à jour' : 'Publier l\'annonce'}</button>
-            </div>
-          </div>
         </div>
       )}
     </div>

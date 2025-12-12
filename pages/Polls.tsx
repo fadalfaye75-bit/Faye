@@ -19,8 +19,8 @@ export const Polls: React.FC = () => {
   // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Permission: Responsable UNIQUEMENT peut créer/gérer. L'Admin supervise.
-  const canManage = user?.role === Role.RESPONSIBLE;
+  // Permission: Responsable ET Admin peuvent créer/gérer
+  const canManage = user?.role === Role.RESPONSIBLE || user?.role === Role.ADMIN;
   const isAdmin = user?.role === Role.ADMIN;
 
   // --- FILTER BY CLASS (Admin voit tout) ---
@@ -45,8 +45,8 @@ export const Polls: React.FC = () => {
   };
 
   const togglePollStatus = (poll: Poll) => {
-    // Seul le créateur (Responsable) peut le faire.
-    if (poll.authorId !== user?.id) {
+    // Seul le créateur ou l'Admin peut le faire.
+    if (poll.authorId !== user?.id && !isAdmin) {
        addNotification("Action réservée au créateur", "ERROR");
        return;
     }
@@ -111,10 +111,6 @@ export const Polls: React.FC = () => {
       addNotification("Ce sondage est clôturé.", "WARNING");
       return;
     }
-    if (isAdmin) {
-      addNotification("L'administrateur supervise mais ne vote pas.", "INFO");
-      return;
-    }
     votePoll(pollId, optionId);
   };
 
@@ -165,8 +161,8 @@ export const Polls: React.FC = () => {
           const canViewResults = hasVoted || user?.role === Role.RESPONSIBLE || isAdmin || !poll.active;
           const chartData = poll.options.map(o => ({ ...o, votes: o.voterIds.length }));
 
-          // PERMISSION : Seul le créateur (Responsable) voit les boutons
           const isAuthor = user?.id === poll.authorId;
+          const canManageThisPoll = isAuthor || isAdmin;
 
           return (
             <div key={poll.id} className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm border p-6 transition group ${poll.active ? 'border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700' : 'border-slate-100 dark:border-slate-800 opacity-80 bg-slate-50/50'}`}>
@@ -194,7 +190,7 @@ export const Polls: React.FC = () => {
                        )}
                    </div>
                 </div>
-                {isAuthor && (
+                {canManageThisPoll && (
                   <div className="flex gap-2 w-full md:w-auto flex-wrap">
                     <button 
                       onClick={() => togglePollStatus(poll)}
@@ -228,7 +224,7 @@ export const Polls: React.FC = () => {
                   {poll.options.map((opt) => {
                     const isSelected = opt.id === userVotedOptionId;
                     const voteCount = opt.voterIds.length;
-                    const isDisabled = !poll.active || isAdmin;
+                    const isDisabled = !poll.active;
                     
                     return (
                       <button
@@ -263,12 +259,12 @@ export const Polls: React.FC = () => {
                     );
                   })}
                   
-                  {hasVoted && poll.active && !isAdmin && (
+                  {hasVoted && poll.active && (
                     <p className="text-center text-xs text-indigo-500 font-medium mt-2">
                        Cliquez pour changer votre vote.
                     </p>
                   )}
-                  {isAdmin && (
+                  {isAdmin && !hasVoted && (
                      <p className="text-center text-xs text-slate-400 font-medium mt-2 flex items-center justify-center gap-1">
                        <Eye className="w-3 h-3"/> Mode Supervision
                     </p>

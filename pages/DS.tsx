@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, Exam } from '../types';
@@ -22,8 +21,8 @@ export const DS: React.FC = () => {
   // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Création réservée au Responsable UNIQUEMENT. L'Admin supervise.
-  const canCreate = user?.role === Role.RESPONSIBLE;
+  // Création : Responsable ET Admin
+  const canCreate = user?.role === Role.RESPONSIBLE || user?.role === Role.ADMIN;
   const isAdmin = user?.role === Role.ADMIN;
 
   // --- FILTER BY CLASS (Admin voit tout) ---
@@ -168,8 +167,9 @@ export const DS: React.FC = () => {
             const examDate = new Date(exam.date);
             const isThisWeek = isSameWeek(examDate, new Date());
             
-            // PERMISSION : Seul le créateur (Responsable) voit les boutons
+            // PERMISSION : Créateur ou Admin
             const isAuthor = user?.id === exam.authorId;
+            const canManageThis = isAuthor || isAdmin;
 
             return (
               <div key={exam.id} className="p-5 md:p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition flex flex-col md:flex-row gap-6 md:items-center group">
@@ -241,7 +241,7 @@ export const DS: React.FC = () => {
                       <Send className="w-4 h-4" /> <span className="md:hidden">Partager</span>
                     </button>
                     
-                    {isAuthor && (
+                    {canManageThis && (
                       <div className="flex gap-2">
                         <button 
                           onClick={() => openEdit(exam)}
