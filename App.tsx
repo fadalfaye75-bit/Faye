@@ -1,5 +1,4 @@
 
-
 import React, { useState, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Layout } from './components/Layout';
@@ -14,7 +13,6 @@ const DS = React.lazy(() => import('./pages/DS').then(module => ({ default: modu
 const Polls = React.lazy(() => import('./pages/Polls').then(module => ({ default: module.Polls })));
 const AdminPanel = React.lazy(() => import('./pages/AdminPanel').then(module => ({ default: module.AdminPanel })));
 const TimeTable = React.lazy(() => import('./pages/TimeTable').then(module => ({ default: module.TimeTable })));
-const Assistant = React.lazy(() => import('./pages/Assistant').then(module => ({ default: module.Assistant })));
 
 const LoadingScreen = () => (
   <div className="h-full w-full flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-300">
@@ -40,7 +38,6 @@ const Main: React.FC = () => {
       case 'polls': return <Polls />;
       case 'admin': return <AdminPanel />;
       case 'timetable': return <TimeTable />;
-      case 'assistant': return <Assistant />;
       default: return <Dashboard onNavigate={setCurrentPage} />;
     }
   };

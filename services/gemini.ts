@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export interface ChatMessage {
@@ -5,7 +6,7 @@ export interface ChatMessage {
   text: string;
 }
 
-export type CorrectionStyle = 'FIX' | 'PROFESSIONAL' | 'ACADEMIC' | 'SIMPLE' | 'CONCISE' | 'CASUAL' | 'PERSUASIVE';
+export type CorrectionStyle = 'FIX' | 'PROFESSIONAL' | 'ACADEMIC' | 'SIMPLE' | 'CONCISE' | 'CASUAL' | 'PERSUASIVE' | 'GENERATE_CONTENT';
 
 // Initialize the client with the API key from the environment variable.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -63,9 +64,12 @@ export const correctTextAdvanced = async (text: string, style: CorrectionStyle):
       case 'PERSUASIVE':
         prompt = `Rends le texte suivant plus persuasif et engageant :\n"${text}"`;
         break;
+      case 'GENERATE_CONTENT':
+        prompt = `Rédige le contenu complet d'une annonce scolaire basée sur le titre suivant : "${text}". Le ton doit être clair, informatif et adapté à des étudiants. Inclus les détails implicites pertinents.`;
+        break;
       case 'FIX':
       default:
-        prompt = `Corrige uniquement les fautes d'orthographe et de grammaire du texte suivant, sans changer le style :\n"${text}"`;
+        prompt = `Corrige uniquement les fautes d'orthographe, de grammaire et de syntaxe du texte suivant, sans changer le style ni le vocabulaire :\n"${text}"`;
         break;
     }
 
@@ -73,7 +77,7 @@ export const correctTextAdvanced = async (text: string, style: CorrectionStyle):
       model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
-        temperature: 0.3, // Lower temperature for more deterministic correction
+        temperature: style === 'GENERATE_CONTENT' ? 0.7 : 0.3, // Plus créatif pour la génération, plus strict pour la correction
       }
     });
 
