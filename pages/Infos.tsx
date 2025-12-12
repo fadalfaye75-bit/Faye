@@ -2,11 +2,10 @@
 import React, { useState, useMemo, useEffect, useDeferredValue, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, Urgency, Announcement, Attachment } from '../types';
-import { Megaphone, Trash2, Clock, Plus, X, ArrowUpDown, Filter, Send, Mail, User, AlertCircle, Timer, Search, Archive, Eye, Copy, ChevronLeft, ChevronRight, Pencil, School, Calendar, AlertTriangle, FileText, Info, Link as LinkIcon, Image as ImageIcon, ExternalLink, Download, File, Lock, Wand2, Loader2, Sparkles, SpellCheck } from 'lucide-react';
+import { Megaphone, Trash2, Clock, Plus, X, ArrowUpDown, Filter, Send, Mail, User, AlertCircle, Timer, Search, Archive, Eye, Copy, ChevronLeft, ChevronRight, Pencil, School, Calendar, AlertTriangle, FileText, Info, Link as LinkIcon, Image as ImageIcon, ExternalLink, Download, File, Lock } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, addHours } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { UserAvatar } from '../components/UserAvatar';
-import { correctTextAdvanced } from '../services/gemini';
 
 // Configuration visuelle par niveau d'urgence
 const URGENCY_CONFIG = {
@@ -102,9 +101,6 @@ export const Infos: React.FC = () => {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [targetRoles, setTargetRoles] = useState<Role[]>([]);
 
-  // AI Loading State
-  const [isAiLoading, setIsAiLoading] = useState<'TITLE' | 'CONTENT' | 'FIX' | 'GENERATE' | null>(null);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Permission: Seulement le Responsable peut créer. L'Admin supervise.
@@ -143,75 +139,6 @@ export const Infos: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [deferredSearchQuery, filterStartDate, filterEndDate, filterUrgency, filterAuthorId, filterClassId, showArchived, sortOrder]);
-
-  // --- AI HANDLERS ---
-  const handleAiImproveTitle = async () => {
-    if (!title.trim()) {
-      addNotification("Veuillez écrire un titre d'abord.", "WARNING");
-      return;
-    }
-    setIsAiLoading('TITLE');
-    try {
-      const newTitle = await correctTextAdvanced(title, 'CONCISE');
-      setTitle(newTitle.replace(/^"|"$/g, '')); // Remove quotes if added by AI
-      addNotification("Titre optimisé !", "SUCCESS");
-    } catch (e) {
-      addNotification("Erreur de l'assistant IA.", "ERROR");
-    } finally {
-      setIsAiLoading(null);
-    }
-  };
-
-  const handleAiGenerateFromTitle = async () => {
-    if (!title.trim()) {
-      addNotification("Veuillez écrire un titre pour générer le contenu.", "WARNING");
-      return;
-    }
-    setIsAiLoading('GENERATE');
-    try {
-      const generatedContent = await correctTextAdvanced(title, 'GENERATE_CONTENT');
-      setContent(generatedContent);
-      addNotification("Contenu généré avec succès !", "SUCCESS");
-    } catch (e) {
-      addNotification("Erreur de génération IA.", "ERROR");
-    } finally {
-      setIsAiLoading(null);
-    }
-  };
-
-  const handleAiImproveContent = async () => {
-    if (!content.trim()) {
-      addNotification("Veuillez écrire du contenu d'abord.", "WARNING");
-      return;
-    }
-    setIsAiLoading('CONTENT');
-    try {
-      const newContent = await correctTextAdvanced(content, 'PROFESSIONAL');
-      setContent(newContent);
-      addNotification("Contenu reformulé professionnellement !", "SUCCESS");
-    } catch (e) {
-      addNotification("Erreur de l'assistant IA.", "ERROR");
-    } finally {
-      setIsAiLoading(null);
-    }
-  };
-
-  const handleAiFixGrammar = async () => {
-    if (!content.trim()) {
-        addNotification("Veuillez écrire du contenu d'abord.", "WARNING");
-        return;
-    }
-    setIsAiLoading('FIX');
-    try {
-        const fixedContent = await correctTextAdvanced(content, 'FIX');
-        setContent(fixedContent);
-        addNotification("Fautes corrigées !", "SUCCESS");
-    } catch (e) {
-        addNotification("Erreur de correction.", "ERROR");
-    } finally {
-        setIsAiLoading(null);
-    }
-  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -771,55 +698,13 @@ export const Infos: React.FC = () => {
                  <div>
                     <div className="flex justify-between items-center mb-2">
                       <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Titre</label>
-                      <button 
-                        type="button" 
-                        onClick={handleAiImproveTitle}
-                        disabled={isAiLoading === 'TITLE'}
-                        className="text-[10px] flex items-center gap-1 text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300 px-2 py-1 rounded-md font-bold hover:bg-purple-100 transition disabled:opacity-50"
-                      >
-                        {isAiLoading === 'TITLE' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        Optimiser titre
-                      </button>
                     </div>
                     <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-lg font-bold focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition text-slate-800 dark:text-white placeholder-slate-400" placeholder="Ex: Sortie pédagogique..." />
                  </div>
                  
-                 {/* AI Title Generation Button (New) */}
-                 <div className="flex justify-end -mt-4 mb-4">
-                    <button 
-                        type="button"
-                        onClick={handleAiGenerateFromTitle}
-                        disabled={isAiLoading === 'GENERATE'}
-                        className="text-xs flex items-center gap-1 text-white bg-indigo-500 hover:bg-indigo-600 px-3 py-1.5 rounded-lg font-bold shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isAiLoading === 'GENERATE' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                        Générer contenu via Titre
-                    </button>
-                 </div>
-
                  <div>
                     <div className="flex justify-between items-center mb-2">
                       <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Contenu</label>
-                      <div className="flex gap-2">
-                          <button 
-                            type="button" 
-                            onClick={handleAiFixGrammar}
-                            disabled={isAiLoading === 'FIX'}
-                            className="text-[10px] flex items-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-300 px-2 py-1 rounded-md font-bold hover:bg-emerald-100 transition disabled:opacity-50"
-                          >
-                            {isAiLoading === 'FIX' ? <Loader2 className="w-3 h-3 animate-spin" /> : <SpellCheck className="w-3 h-3" />}
-                            Corriger syntaxe
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={handleAiImproveContent}
-                            disabled={isAiLoading === 'CONTENT'}
-                            className="text-[10px] flex items-center gap-1 text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300 px-2 py-1 rounded-md font-bold hover:bg-purple-100 transition disabled:opacity-50"
-                          >
-                            {isAiLoading === 'CONTENT' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                            Reformuler (Pro)
-                          </button>
-                      </div>
                     </div>
                     <textarea required value={content} onChange={e => setContent(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 text-base min-h-[150px] focus:ring-4 focus:ring-[#87CEEB]/20 focus:border-[#0EA5E9] outline-none transition leading-relaxed text-slate-800 dark:text-white placeholder-slate-400 font-medium resize-none" placeholder="Détails de l'annonce..." />
                  </div>

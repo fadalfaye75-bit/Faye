@@ -2,10 +2,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Role, Poll } from '../types';
-import { Vote, Trash2, Plus, BarChart2, CheckCircle, Eye, EyeOff, Pencil, X, Send, Lock, Unlock, Timer, Copy, Wand2, Loader2 } from 'lucide-react';
+import { Vote, Trash2, Plus, BarChart2, CheckCircle, Eye, EyeOff, Pencil, X, Send, Lock, Unlock, Timer, Copy } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { addHours, isAfter } from 'date-fns';
-import { correctTextAdvanced } from '../services/gemini';
 
 export const Polls: React.FC = () => {
   const { user, polls, addPoll, updatePoll, votePoll, deletePoll, shareResource, addNotification } = useApp();
@@ -16,9 +15,6 @@ export const Polls: React.FC = () => {
   const [optionsStr, setOptionsStr] = useState(''); 
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [durationHours, setDurationHours] = useState<number | ''>('');
-
-  // AI Loading State
-  const [isAiLoading, setIsAiLoading] = useState(false);
 
   // Delete Confirmation State
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -72,25 +68,6 @@ export const Polls: React.FC = () => {
     if (deleteId) {
       deletePoll(deleteId);
       setDeleteId(null);
-    }
-  };
-
-  // --- AI HANDLER ---
-  const handleAiReformulate = async () => {
-    if (!question.trim()) {
-      addNotification("Veuillez écrire une question d'abord.", "WARNING");
-      return;
-    }
-    setIsAiLoading(true);
-    try {
-      // On demande une reformulation simple et claire pour un sondage
-      const newQuestion = await correctTextAdvanced(question, 'SIMPLE');
-      setQuestion(newQuestion.replace(/^"|"$/g, ''));
-      addNotification("Question reformulée !", "SUCCESS");
-    } catch (e) {
-      addNotification("Erreur de l'assistant IA.", "ERROR");
-    } finally {
-      setIsAiLoading(false);
     }
   };
 
@@ -352,15 +329,6 @@ export const Polls: React.FC = () => {
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <label className="block text-xs font-bold text-slate-500 uppercase">Question</label>
-                    <button 
-                      type="button" 
-                      onClick={handleAiReformulate}
-                      disabled={isAiLoading}
-                      className="text-[10px] flex items-center gap-1 text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-300 px-2 py-1 rounded-md font-bold hover:bg-purple-100 transition disabled:opacity-50"
-                    >
-                      {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                      Assistant IA
-                    </button>
                   </div>
                   <input required type="text" value={question} onChange={e => setQuestion(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-base focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition font-medium text-slate-800 dark:text-white" />
                 </div>
