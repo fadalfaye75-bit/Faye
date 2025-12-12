@@ -42,8 +42,8 @@ export interface Announcement {
   urgency: Urgency;
   authorId: string;
   classId: string;
-  durationHours?: number; // Durée de visibilité en heures (optionnel)
-  link?: string; // Lien externe (Google Forms/Meet/Drive)
+  durationHours?: number | null; // Durée de visibilité en heures (optionnel ou null)
+  link?: string | null; // Lien externe (Google Forms/Meet/Drive) (optionnel ou null)
   attachments?: Attachment[]; // Fichiers joints (PDF, Images)
 }
 
